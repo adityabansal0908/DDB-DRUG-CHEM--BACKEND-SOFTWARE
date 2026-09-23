@@ -55,7 +55,7 @@ export const FieldMonitoring: React.FC = () => {
     <div
       id="field-monitoring-dashboard"
       data-testid="field-monitoring-dashboard"
-      className="p-6 md:p-8 lg:p-10 max-w-[1600px] mx-auto space-y-8"
+      className="p-3 sm:p-6 md:p-8 lg:p-10 max-w-[1600px] mx-auto space-y-5 sm:space-y-8"
     >
       {/* Top Section Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

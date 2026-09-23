@@ -1,0 +1,198 @@
+{
+  "entities": {
+    "User": {
+      "collection": "users",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "email": { "type": "string", "required": true },
+        "name": { "type": "string", "required": true },
+        "role": { "type": "string", "enum": ["admin", "sales_rep"], "required": true },
+        "repId": { "type": "string", "required": false },
+        "avatarUrl": { "type": "string", "required": false },
+        "avatarType": { "type": "string", "enum": ["image", "monogram"], "required": false },
+        "isOnline": { "type": "boolean", "required": true },
+        "lastActiveTime": { "type": "number", "required": false },
+        "lastLoginTime": { "type": "string", "required": false },
+        "createdAt": { "type": "string", "required": false },
+        "updatedAt": { "type": "string", "required": false }
+      }
+    },
+    "Product": {
+      "collection": "products",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "name": { "type": "string", "required": true },
+        "genericName": { "type": "string", "required": true },
+        "packaging": { "type": "string", "required": true },
+        "form": { "type": "string", "required": true },
+        "mrp": { "type": "number", "required": true },
+        "pricingToStockist": { "type": "number", "required": false },
+        "pricingToRetailer": { "type": "number", "required": false },
+        "sellingRate": { "type": "number", "required": true },
+        "purchasePrice": { "type": "number", "required": true },
+        "gst": { "type": "any", "required": true },
+        "company": { "type": "string", "required": false },
+        "category": { "type": "string", "required": false },
+        "hiddenFromRep": { "type": "boolean", "required": false },
+        "stockUnits": { "type": "number", "required": false },
+        "batchNo": { "type": "string", "required": false },
+        "expiryDate": { "type": "string", "required": false },
+        "batches": { "type": "array", "required": false },
+        "strength": { "type": "string", "required": false },
+        "minOrderQty": { "type": "number", "required": false },
+        "status": { "type": "string", "required": false },
+        "indication": { "type": "string", "required": false }
+      }
+    },
+    "Doctor": {
+      "collection": "doctors",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "name": { "type": "string", "required": true },
+        "specialty": { "type": "string", "required": true },
+        "clinicName": { "type": "string", "required": true },
+        "address": { "type": "string", "required": true },
+        "city": { "type": "string", "required": false },
+        "area": { "type": "string", "required": true },
+        "phone": { "type": "string", "required": true },
+        "bestTimeToVisit": { "type": "string", "required": true },
+        "visitingDays": { "type": "array", "required": false },
+        "visitingSlots": { "type": "array", "required": false },
+        "targetVisitsPerMonth": { "type": "number", "required": true },
+        "visitsCompletedThisMonth": { "type": "number", "required": true },
+        "avatarUrl": { "type": "string", "required": true },
+        "dateOfBirth": { "type": "string", "required": false },
+        "targetedProducts": { "type": "array", "required": false },
+        "adminRemarks": { "type": "string", "required": false },
+        "coordinates": { "type": "object", "required": true },
+        "scheduledTime": { "type": "string", "required": false },
+        "status": { "type": "string", "required": false },
+        "assignedRepIds": { "type": "array", "required": false }
+      }
+    },
+    "SalesRep": {
+      "collection": "sales_reps",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "name": { "type": "string", "required": true },
+        "employeeCode": { "type": "string", "required": true },
+        "territory": { "type": "string", "required": true },
+        "phone": { "type": "string", "required": true },
+        "avatarUrl": { "type": "string", "required": true },
+        "status": { "type": "string", "required": true },
+        "todayVisitsCompleted": { "type": "number", "required": true },
+        "todayTarget": { "type": "number", "required": true },
+        "monthlyTarget": { "type": "number", "required": true },
+        "monthlyAchieved": { "type": "number", "required": true },
+        "monthlyRevenueTarget": { "type": "number", "required": false },
+        "monthlyRevenueAchieved": { "type": "number", "required": false },
+        "targetNotes": { "type": "string", "required": false },
+        "targetPeriod": { "type": "string", "required": false },
+        "assignedDoctorIds": { "type": "array", "required": false },
+        "currentLocationName": { "type": "string", "required": true },
+        "batteryLevel": { "type": "number", "required": true },
+        "gpsSignal": { "type": "string", "required": true },
+        "lastCheckinTime": { "type": "string", "required": true }
+      }
+    },
+    "FieldVisit": {
+      "collection": "field_visits",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "repId": { "type": "string", "required": true },
+        "repName": { "type": "string", "required": true },
+        "repAvatar": { "type": "string", "required": true },
+        "doctorId": { "type": "string", "required": true },
+        "doctorName": { "type": "string", "required": true },
+        "specialty": { "type": "string", "required": true },
+        "clinicName": { "type": "string", "required": true },
+        "clinicAddress": { "type": "string", "required": true },
+        "timestamp": { "type": "string", "required": true },
+        "isoDate": { "type": "string", "required": false },
+        "purpose": { "type": "string", "required": true },
+        "photoUrl": { "type": "string", "required": true },
+        "notes": { "type": "string", "required": true },
+        "locationVerified": { "type": "boolean", "required": true },
+        "distanceMeters": { "type": "number", "required": true },
+        "productsDiscussed": { "type": "array", "required": true },
+        "sampleUnitsGiven": { "type": "number", "required": true },
+        "orderValueBooked": { "type": "number", "required": false },
+        "approvalStatus": { "type": "string", "required": true },
+        "feedbackFromDoctor": { "type": "string", "required": false }
+      }
+    },
+    "OrderOrSampleRequest": {
+      "collection": "orders",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "repId": { "type": "string", "required": true },
+        "repName": { "type": "string", "required": true },
+        "doctorName": { "type": "string", "required": true },
+        "clinicName": { "type": "string", "required": true },
+        "date": { "type": "string", "required": true },
+        "isoDate": { "type": "string", "required": false },
+        "items": { "type": "array", "required": true },
+        "totalAmount": { "type": "number", "required": true },
+        "type": { "type": "string", "required": true },
+        "status": { "type": "string", "required": true }
+      }
+    },
+    "RetailCounter": {
+      "collection": "retail_counters",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "name": { "type": "string", "required": true },
+        "type": { "type": "string", "required": true },
+        "contactPerson": { "type": "string", "required": true },
+        "phone": { "type": "string", "required": true },
+        "address": { "type": "string", "required": true },
+        "area": { "type": "string", "required": true },
+        "city": { "type": "string", "required": true },
+        "territory": { "type": "string", "required": true },
+        "assignedRepId": { "type": "string", "required": true },
+        "assignedRepName": { "type": "string", "required": true },
+        "drugLicenseNo": { "type": "string", "required": true },
+        "gstin": { "type": "string", "required": true },
+        "productsSold": { "type": "array", "required": true },
+        "totalMonthlyRevenue": { "type": "number", "required": true },
+        "creditDays": { "type": "number", "required": true },
+        "status": { "type": "string", "required": true }
+      }
+    },
+    "AdminNotification": {
+      "collection": "notifications",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "type": { "type": "string", "required": true },
+        "title": { "type": "string", "required": true },
+        "message": { "type": "string", "required": true },
+        "repId": { "type": "string", "required": true },
+        "repName": { "type": "string", "required": true },
+        "repAvatar": { "type": "string", "required": false },
+        "timestamp": { "type": "string", "required": true },
+        "formattedTime": { "type": "string", "required": true },
+        "read": { "type": "boolean", "required": true },
+        "priority": { "type": "string", "required": false },
+        "targetTab": { "type": "string", "required": false },
+        "metadata": { "type": "object", "required": false }
+      }
+    },
+    "AuditLog": {
+      "collection": "audit_logs",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "timestamp": { "type": "string", "required": true },
+        "formattedTime": { "type": "string", "required": true },
+        "userEmail": { "type": "string", "required": true },
+        "userName": { "type": "string", "required": true },
+        "userRole": { "type": "string", "required": true },
+        "actionType": { "type": "string", "required": true },
+        "module": { "type": "string", "required": true },
+        "targetItemName": { "type": "string", "required": true },
+        "details": { "type": "string", "required": true },
+        "previousStateSnippet": { "type": "string", "required": false },
+        "newStateSnippet": { "type": "string", "required": false }
+      }
+    }
+  }
+}

@@ -4,13 +4,17 @@ import { Doctor } from '../../types';
 import {
   MapPin,
   Clock,
+  Calendar,
   Phone,
   NavigationArrow,
   CheckCircle,
   PlayCircle,
   CalendarCheck,
   Building,
-  CaretRight
+  CaretRight,
+  Pill,
+  Cake,
+  Lock
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
@@ -53,9 +57,20 @@ export const DoctorRouteList: React.FC = () => {
             <span className="text-[11px] font-bold tracking-[0.15em] uppercase text-blue-600 block">
               Today's Field Route
             </span>
-            <h2 className="text-xl font-bold text-slate-900 font-heading">
-              {currentRep.territory}
-            </h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-xl font-bold text-slate-900 font-heading">
+                {currentRep.territory}
+              </h2>
+              <span
+                id="rep-territory-assigned-badge"
+                data-testid="rep-territory-assigned-badge"
+                className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200"
+                title="Only Admin can modify assigned territory and routes"
+              >
+                <Lock size={10} className="text-slate-400" />
+                <span>Admin Assigned Route</span>
+              </span>
+            </div>
           </div>
           <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 tabular-nums">
             {completedCount} of {totalCount} Visited
@@ -137,17 +152,75 @@ export const DoctorRouteList: React.FC = () => {
                 </span>
               </div>
 
-              {/* Clinic Timing & Address */}
-              <div className="flex flex-wrap items-center justify-between text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100 gap-2">
-                <div className="flex items-center gap-1.5">
-                  <Clock size={14} className="text-blue-600" />
-                  <span className="font-medium">Chamber: {doctor.bestTimeToVisit}</span>
+              {/* Visiting Schedule (Days & Slots), City & Area */}
+              <div className="space-y-2 text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  {/* Visiting Days */}
+                  <div className="flex items-center gap-1.5 font-medium text-indigo-700 bg-indigo-50 border border-indigo-200/70 px-2 py-0.5 rounded">
+                    <Calendar size={13} className="text-indigo-600 shrink-0" />
+                    <span>
+                      {doctor.visitingDays && doctor.visitingDays.length > 0
+                        ? doctor.visitingDays.length === 7
+                          ? 'All Days (Mon-Sun)'
+                          : doctor.visitingDays.length === 6 && !doctor.visitingDays.includes('Sun')
+                          ? 'Mon - Sat'
+                          : doctor.visitingDays.length === 5 && !doctor.visitingDays.includes('Sat') && !doctor.visitingDays.includes('Sun')
+                          ? 'Mon - Fri'
+                          : doctor.visitingDays.join(', ')
+                        : 'Mon - Sat'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1 text-slate-500">
+                    <MapPin size={13} className="text-slate-400" />
+                    <span>
+                      {doctor.city ? `${doctor.city} • ` : ''}
+                      {doctor.area}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 text-slate-500">
-                  <MapPin size={14} className="text-slate-400" />
-                  <span>{doctor.area}</span>
+
+                {/* Multiple Visiting Slots */}
+                <div className="flex flex-wrap gap-1.5 items-center pt-0.5">
+                  {doctor.visitingSlots && doctor.visitingSlots.length > 0 ? (
+                    doctor.visitingSlots.map((slot, sIdx) => (
+                      <span
+                        key={sIdx}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200/80 font-mono text-[11px]"
+                      >
+                        <Clock size={11} className="text-blue-600" />
+                        <strong className="text-slate-900 font-semibold">{slot.slotName || `Slot ${sIdx + 1}`}:</strong>
+                        <span>{slot.startTime}{slot.endTime ? ` - ${slot.endTime}` : ''}</span>
+                      </span>
+                    ))
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200/80 font-mono text-[11px]">
+                      <Clock size={11} className="text-blue-600" />
+                      <span>{doctor.bestTimeToVisit}</span>
+                    </span>
+                  )}
                 </div>
               </div>
+
+              {/* Targeted Products Marketed to this Doctor */}
+              {doctor.targetedProducts && doctor.targetedProducts.length > 0 && (
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Targeted Formulations:
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {doctor.targetedProducts.map((p, pIdx) => (
+                      <span
+                        key={pIdx}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-medium"
+                      >
+                        <Pill size={11} className="text-blue-500" />
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Action Buttons (Large tap targets) */}
               <div className="flex items-center gap-2 pt-1">

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
+import { DdbLogo } from '../DdbLogo';
 import { DoctorRouteList } from './DoctorRouteList';
 import { CheckinForm } from './CheckinForm';
 import { RepCatalog } from './RepCatalog';
@@ -13,7 +14,8 @@ import {
   DeviceMobile,
   CheckCircle,
   WifiHigh,
-  BatteryMedium
+  BatteryMedium,
+  CaretLeft
 } from '@phosphor-icons/react';
 
 export const RepMobileView: React.FC = () => {
@@ -21,7 +23,10 @@ export const RepMobileView: React.FC = () => {
     activeRepTab,
     setActiveRepTab,
     deviceView,
-    currentRep
+    currentRep,
+    canGoBack,
+    goBack,
+    previousScreenName
   } = useApp();
 
   const navTabs = [
@@ -67,22 +72,35 @@ export const RepMobileView: React.FC = () => {
     <div className="flex flex-col min-h-full bg-slate-50 relative">
       {/* Mobile Top App Bar */}
       <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <img
-            src={currentRep.avatarUrl}
-            alt={currentRep.name}
-            referrerPolicy="no-referrer"
-            className="w-9 h-9 rounded-full object-cover border border-slate-200"
-          />
+        <div className="flex items-center gap-2 sm:gap-2.5">
+          {/* "<" Sign Back Button to navigate to previous screen */}
+          <button
+            type="button"
+            id="rep-mobile-back-btn"
+            data-testid="rep-mobile-back-btn"
+            onClick={canGoBack ? goBack : undefined}
+            disabled={!canGoBack}
+            title={canGoBack ? `Go back to ${previousScreenName} (<)` : 'Already on first screen'}
+            aria-label={canGoBack ? `Go back to ${previousScreenName}` : 'Back button'}
+            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+              canGoBack
+                ? 'bg-slate-100 hover:bg-slate-200 active:scale-90 text-slate-800 border border-slate-300 shadow-2xs cursor-pointer group'
+                : 'bg-slate-50 text-slate-300 border border-slate-200/50 cursor-not-allowed opacity-40'
+            }`}
+          >
+            <CaretLeft size={18} weight="bold" className={canGoBack ? 'group-hover:-translate-x-0.5 transition-transform' : ''} />
+            <span className="sr-only">Go back to previous screen</span>
+          </button>
+          <DdbLogo className="w-8 h-8 rounded-lg shadow-xs" />
           <div>
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-slate-900 text-sm font-heading">
-                {currentRep.name}
+                DDB DRUG CHEM
               </span>
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             </div>
             <p className="text-[11px] text-slate-500 font-medium">
-              {currentRep.territory.split('&')[0]} &bull; GPS Online
+              {currentRep.name} &bull; {currentRep.territory.split('&')[0]}
             </p>
           </div>
         </div>

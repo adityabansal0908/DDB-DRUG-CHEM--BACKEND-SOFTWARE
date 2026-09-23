@@ -1,6 +1,6 @@
 {
-  "name": "PharmaTrack Field & Sales Monitoring",
-  "description": "Clinical-grade pharmaceutical field sales monitoring and rep check-in platform with live visit feeds, catalog pricing management, and role-based views.",
+  "name": "DDB DRUG CHEM",
+  "description": "Field sales monitoring, rep chamber check-in, and pharmaceutical product catalog management for DDB DRUG CHEM.",
   "requestFramePermissions": ["camera", "geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

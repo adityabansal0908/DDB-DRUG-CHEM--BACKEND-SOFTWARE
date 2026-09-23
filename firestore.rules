@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isUser(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function getUserRole() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : 'sales_rep';
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'admin' ||
+        getUserRole() == 'admin'
+      );
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if true;
+    }
+
+    // Products Collection
+    match /products/{productId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Doctors Collection
+    match /doctors/{doctorId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Sales Reps Collection
+    match /sales_reps/{repId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Field Visits Collection
+    match /field_visits/{visitId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Orders Collection
+    match /orders/{orderId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Retail Counters Collection
+    match /retail_counters/{counterId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Notifications Collection
+    match /notifications/{notificationId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Audit Logs Collection
+    match /audit_logs/{logId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Settings / Config Collection
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}

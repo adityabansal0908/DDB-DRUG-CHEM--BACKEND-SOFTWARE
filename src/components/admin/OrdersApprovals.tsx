@@ -17,7 +17,7 @@ export const OrdersApprovals: React.FC = () => {
     <div
       id="orders-approvals-page"
       data-testid="orders-approvals-page"
-      className="p-6 md:p-8 lg:p-10 max-w-[1600px] mx-auto space-y-6"
+      className="p-3 sm:p-6 md:p-8 lg:p-10 max-w-[1600px] mx-auto space-y-4 sm:space-y-6"
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>

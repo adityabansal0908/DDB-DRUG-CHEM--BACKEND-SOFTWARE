@@ -10,7 +10,9 @@ import {
   Image as ImageIcon,
   X,
   Buildings,
-  UserCheck
+  UserCheck,
+  Clock,
+  Calendar
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
@@ -45,6 +47,9 @@ export const CheckinForm: React.FC = () => {
   useEffect(() => {
     if (selectedDoctorForCheckin) {
       setSelectedDoctorId(selectedDoctorForCheckin.id);
+      if (selectedDoctorForCheckin.targetedProducts && selectedDoctorForCheckin.targetedProducts.length > 0) {
+        setSelectedProducts(selectedDoctorForCheckin.targetedProducts);
+      }
     }
   }, [selectedDoctorForCheckin]);
 
@@ -270,8 +275,32 @@ export const CheckinForm: React.FC = () => {
                 <div className="text-xs text-slate-600 flex-1 min-w-0">
                   <div className="font-bold text-slate-800">{activeDoctor.name}</div>
                   <div className="text-slate-500 truncate">{activeDoctor.clinicName} &bull; {activeDoctor.address}</div>
-                  <div className="text-[11px] text-blue-700 font-medium mt-0.5">
-                    Best Time: {activeDoctor.bestTimeToVisit}
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                    <span className="inline-flex items-center gap-1 text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.5 rounded font-semibold">
+                      <Calendar size={11} className="shrink-0" />
+                      {activeDoctor.visitingDays && activeDoctor.visitingDays.length > 0
+                        ? activeDoctor.visitingDays.length === 7
+                          ? 'All Days'
+                          : activeDoctor.visitingDays.join(', ')
+                        : 'Mon - Sat'}
+                    </span>
+                    {activeDoctor.visitingSlots && activeDoctor.visitingSlots.length > 0 ? (
+                      activeDoctor.visitingSlots.map((slot, sIdx) => (
+                        <span
+                          key={sIdx}
+                          className="inline-flex items-center gap-1 text-slate-700 bg-white border border-slate-200 px-1.5 py-0.5 rounded font-mono text-[10.5px]"
+                        >
+                          <Clock size={11} className="text-blue-600 shrink-0" />
+                          <strong className="text-slate-800">{slot.slotName || `Slot ${sIdx + 1}`}:</strong>
+                          <span>{slot.startTime}{slot.endTime ? ` - ${slot.endTime}` : ''}</span>
+                        </span>
+                      ))
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-blue-700 font-medium">
+                        <Clock size={11} />
+                        {activeDoctor.bestTimeToVisit}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
