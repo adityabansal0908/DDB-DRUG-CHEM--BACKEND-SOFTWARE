@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { MonthlySalesPerformanceChart } from './MonthlySalesPerformanceChart';
 import {
   Pill,
   Users,
@@ -11,13 +12,14 @@ import {
   CheckCircle,
   FileText,
   CaretRight,
-  ArrowUpRight,
   ChartBar,
   ChartPie,
   Calendar,
   Sparkle,
   ShieldCheck,
-  Eye
+  Eye,
+  Warning,
+  Package
 } from '@phosphor-icons/react';
 import {
   ResponsiveContainer,
@@ -61,6 +63,18 @@ export const AdminDashboard: React.FC = () => {
   const activeRepsCount = activeReps.length;
   const totalRepsCount = reps.length;
   const avgBattery = Math.round(reps.reduce((acc, r) => acc + (r.batteryLevel || 0), 0) / (totalRepsCount || 1));
+
+  // Key Metric: Pending Orders
+  const pendingOrders = useMemo(() => orders.filter(o => o.status === 'pending' || !o.status), [orders]);
+  const pendingOrdersCount = pendingOrders.length;
+  const pendingOrdersAmount = useMemo(() => pendingOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0), [pendingOrders]);
+
+  // Key Metric: Critical Low Stock Count
+  const criticalLowStockProducts = useMemo(() => {
+    return products.filter(p => (p.stockUnits ?? 0) === 0 || (p.stockUnits ?? 0) <= (p.reorderLevel ?? 50));
+  }, [products]);
+  const criticalLowStockCount = criticalLowStockProducts.length;
+  const outOfStockCount = useMemo(() => products.filter(p => (p.stockUnits ?? 0) === 0).length, [products]);
 
   // 3. Key Metric: Doctors Visited Today
   // Check visits timestamp or isoDate for today
@@ -123,7 +137,7 @@ export const AdminDashboard: React.FC = () => {
   const categoryDistributionData = useMemo(() => {
     const counts: Record<string, number> = {};
     products.forEach(p => {
-      const cat = p.category?.trim() || 'General';
+      const cat = p.category?.trim() || 'Uncategorized';
       counts[cat] = (counts[cat] || 0) + 1;
     });
 
@@ -160,55 +174,157 @@ export const AdminDashboard: React.FC = () => {
       data-testid="admin-home-dashboard"
       className="p-3 sm:p-6 md:p-8 lg:p-10 max-w-[1600px] mx-auto space-y-6 sm:space-y-8"
     >
-      {/* Top Welcome & Executive Pulse Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
-              Operations Home
-            </span>
-            <span className="text-xs text-slate-500 font-medium">
-              Live Territory Telemetry &bull; DDB DRUG CHEM
-            </span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 font-heading">
-            Executive Summary Dashboard
-          </h1>
-          <p className="text-sm text-slate-600">
-            Holistic overview of pharmaceutical formulations, medical rep field activities, and clinic coverage.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            id="btn-goto-reports"
-            data-testid="btn-goto-reports"
-            onClick={() => setActiveAdminTab('reports')}
-            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-2 shadow-xs transition-colors"
-          >
-            <FileText size={18} weight="bold" />
-            <span>Monthly Sales Reports</span>
-            <ArrowUpRight size={14} weight="bold" />
-          </button>
-
-          <button
-            type="button"
-            id="btn-goto-monitoring"
-            data-testid="btn-goto-monitoring"
-            onClick={() => setActiveAdminTab('monitoring')}
-            className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-2 border border-slate-200 transition-colors"
-          >
-            <Users size={18} weight="bold" />
-            <span>Field Surveillance</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 3 CORE KEY METRIC CARDS REQUIRED BY USER + 4TH REVENUE CARD */}
+      {/* EXECUTIVE PERFORMANCE SUMMARY CARDS: Active Reps Today, Pending Orders, Critical Low Stock Count, Total Products */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         
-        {/* KEY METRIC 1: TOTAL PRODUCTS */}
+        {/* SUMMARY CARD 1: ACTIVE REPS TODAY */}
+        <div
+          id="metric-card-active-reps-today"
+          data-testid="metric-card-active-reps-today"
+          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-300 transition-all flex flex-col justify-between space-y-4"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              Active Reps Today
+            </span>
+            <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
+              <Users size={22} weight="duotone" />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-4xl font-extrabold text-slate-900 tabular-nums font-heading">
+                {activeRepsCount}
+                <span className="text-lg text-slate-400 font-normal"> / {totalRepsCount}</span>
+              </span>
+              <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                In Field
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Field representatives logged in and active on routes
+            </p>
+          </div>
+
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+            <span className="flex items-center gap-1.5">
+              <ShieldCheck size={14} className="text-emerald-600" weight="bold" />
+              100% GPS Transmitting
+            </span>
+            <button
+              type="button"
+              onClick={() => setActiveAdminTab('reps')}
+              className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-0.5 cursor-pointer"
+            >
+              <span>Field Reps</span>
+              <CaretRight size={12} weight="bold" />
+            </button>
+          </div>
+        </div>
+
+        {/* SUMMARY CARD 2: PENDING ORDERS */}
+        <div
+          id="metric-card-pending-orders"
+          data-testid="metric-card-pending-orders"
+          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-amber-300 transition-all flex flex-col justify-between space-y-4"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              Pending Orders
+            </span>
+            <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl">
+              <Clock size={22} weight="duotone" />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-4xl font-extrabold text-slate-900 tabular-nums font-heading">
+                {pendingOrdersCount}
+              </span>
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
+                pendingOrdersCount > 0
+                  ? 'text-amber-700 bg-amber-50 border-amber-200'
+                  : 'text-slate-600 bg-slate-50 border-slate-200'
+              }`}>
+                {pendingOrdersCount > 0 ? 'Needs Approval' : 'All Clear'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              {pendingOrdersAmount > 0
+                ? `₹${pendingOrdersAmount.toLocaleString('en-IN')} awaiting dispatch review`
+                : 'All clinic and stockist bookings processed'}
+            </p>
+          </div>
+
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+            <span className="flex items-center gap-1.5">
+              <ShoppingCart size={14} className="text-amber-600" weight="duotone" />
+              {orders.length} Total Booked
+            </span>
+            <button
+              type="button"
+              onClick={() => setActiveAdminTab('orders')}
+              className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-0.5 cursor-pointer"
+            >
+              <span>Review Orders</span>
+              <CaretRight size={12} weight="bold" />
+            </button>
+          </div>
+        </div>
+
+        {/* SUMMARY CARD 3: CRITICAL LOW STOCK COUNT */}
+        <div
+          id="metric-card-critical-low-stock"
+          data-testid="metric-card-critical-low-stock"
+          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-rose-300 transition-all flex flex-col justify-between space-y-4"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              Critical Low Stock Count
+            </span>
+            <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl">
+              <Warning size={22} weight="duotone" />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-4xl font-extrabold text-slate-900 tabular-nums font-heading">
+                {criticalLowStockCount}
+              </span>
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
+                outOfStockCount > 0
+                  ? 'text-rose-700 bg-rose-50 border-rose-200'
+                  : 'text-amber-700 bg-amber-50 border-amber-200'
+              }`}>
+                {outOfStockCount > 0 ? `${outOfStockCount} Out of Stock` : 'Restock Buffer'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              At or below re-order thresholds (&le;500 units)
+            </p>
+          </div>
+
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+            <span className="flex items-center gap-1.5">
+              <Package size={14} className="text-rose-600" weight="duotone" />
+              Stock Alert Active
+            </span>
+            <button
+              type="button"
+              onClick={() => setActiveAdminTab('products')}
+              className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-0.5 cursor-pointer"
+            >
+              <span>Restock</span>
+              <CaretRight size={12} weight="bold" />
+            </button>
+          </div>
+        </div>
+
+        {/* SUMMARY CARD 4: TOTAL PRODUCTS */}
         <div
           id="metric-card-total-products"
           data-testid="metric-card-total-products"
@@ -228,12 +344,12 @@ export const AdminDashboard: React.FC = () => {
               <span className="text-4xl font-extrabold text-slate-900 tabular-nums font-heading">
                 {totalProductsCount}
               </span>
-              <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+              <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
                 Formulations
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Active commercial catalogue rate cards
+              {uniqueCategoriesCount} therapeutic classes across catalogue
             </p>
           </div>
 
@@ -245,7 +361,7 @@ export const AdminDashboard: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveAdminTab('products')}
-              className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-0.5"
+              className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-0.5 cursor-pointer"
             >
               <span>Catalogue</span>
               <CaretRight size={12} weight="bold" />
@@ -253,141 +369,110 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* KEY METRIC 2: ACTIVE SALES REPS */}
-        <div
-          id="metric-card-active-reps"
-          data-testid="metric-card-active-reps"
-          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-300 transition-all flex flex-col justify-between space-y-4"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Active Sales Reps
-            </span>
-            <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
-              <Users size={22} weight="duotone" />
-            </div>
-          </div>
+      </div>
 
-          <div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-4xl font-extrabold text-slate-900 tabular-nums font-heading">
-                {activeRepsCount}
-                <span className="text-lg text-slate-400 font-normal"> / {totalRepsCount}</span>
-              </span>
-              <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                In Field
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              {reps.filter(r => r.status === 'idle').length} Reps currently in transit
-            </p>
-          </div>
-
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
-            <span className="flex items-center gap-1.5">
-              <ShieldCheck size={14} className="text-blue-600" weight="bold" />
-              100% GPS Transmitting
-            </span>
-            <button
-              type="button"
-              onClick={() => setActiveAdminTab('reps')}
-              className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-0.5"
-            >
-              <span>View Reps</span>
-              <CaretRight size={12} weight="bold" />
-            </button>
-          </div>
-        </div>
-
-        {/* KEY METRIC 3: DOCTORS VISITED TODAY */}
+      {/* QUICK SECONDARY TELEMETRY STRIP: Visits Today & Order Value */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Metric: Doctors Visited Today */}
         <div
           id="metric-card-doctors-visited-today"
           data-testid="metric-card-doctors-visited-today"
-          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-indigo-300 transition-all flex flex-col justify-between space-y-4"
+          className="bg-white px-5 py-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Doctors Visited Today
-            </span>
+          <div className="flex items-center gap-3.5">
             <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
-              <UserCheck size={22} weight="duotone" />
+              <UserCheck size={20} weight="duotone" />
+            </div>
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">
+                Doctors Visited Today
+              </span>
+              <div className="flex items-baseline gap-2 mt-0.5">
+                <span className="text-xl font-bold text-slate-900 tabular-nums font-heading">
+                  {doctorsVisitedTodayCount > 0 ? doctorsVisitedTodayCount : 12}
+                </span>
+                <span className="text-xs text-slate-500">/ {totalDailyTarget} Target</span>
+                <span className="text-[11px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+                  {todayTargetProgress > 0 ? `${todayTargetProgress}%` : '71%'}
+                </span>
+              </div>
             </div>
           </div>
-
-          <div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-4xl font-extrabold text-slate-900 tabular-nums font-heading">
-                {doctorsVisitedTodayCount > 0 ? doctorsVisitedTodayCount : 12}
-                <span className="text-lg text-slate-400 font-normal"> / {totalDailyTarget}</span>
-              </span>
-              <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-                {todayTargetProgress > 0 ? `${todayTargetProgress}%` : '71%'} Target
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Across Cardiology, Chest & Gastroenterology
-            </p>
-          </div>
-
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
-            <span className="flex items-center gap-1.5">
-              <MapPin size={14} className="text-emerald-600" weight="fill" />
-              98.4% Geo-fence Verified
-            </span>
-            <button
-              type="button"
-              onClick={() => setActiveAdminTab('monitoring')}
-              className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-0.5"
-            >
-              <span>Live Feed</span>
-              <CaretRight size={12} weight="bold" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setActiveAdminTab('monitoring')}
+            className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-0.5 cursor-pointer"
+          >
+            <span>Surveillance</span>
+            <CaretRight size={12} weight="bold" />
+          </button>
         </div>
 
-        {/* COMPLEMENTARY METRIC 4: ORDERS & REVENUE */}
+        {/* Metric: Orders & Revenue Booked */}
         <div
           id="metric-card-orders-revenue"
           data-testid="metric-card-orders-revenue"
-          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-amber-300 transition-all flex flex-col justify-between space-y-4"
+          className="bg-white px-5 py-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Orders & Dispatches
-            </span>
+          <div className="flex items-center gap-3.5">
             <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl">
-              <ShoppingCart size={22} weight="duotone" />
+              <ShoppingCart size={20} weight="duotone" />
             </div>
-          </div>
-
-          <div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold text-slate-900 tabular-nums font-heading">
-                ₹{(totalOrdersAmount || 289800).toLocaleString('en-IN')}
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">
+                Total Orders Value
               </span>
+              <div className="flex items-baseline gap-2 mt-0.5">
+                <span className="text-xl font-bold text-slate-900 tabular-nums font-heading">
+                  ₹{(totalOrdersAmount || 289800).toLocaleString('en-IN')}
+                </span>
+                <span className="text-xs text-emerald-600 font-medium">
+                  ({orders.filter(o => o.status === 'dispatched' || o.status === 'approved').length} Cleared)
+                </span>
+              </div>
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              {orders.length} Clinic and retail chemist orders
-            </p>
           </div>
-
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
-            <span className="flex items-center gap-1.5">
-              <CheckCircle size={14} className="text-emerald-600" weight="fill" />
-              {orders.filter(o => o.status === 'approved').length} Dispatched
-            </span>
-            <button
-              type="button"
-              onClick={() => setActiveAdminTab('orders')}
-              className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-0.5"
-            >
-              <span>Approvals</span>
-              <CaretRight size={12} weight="bold" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setActiveAdminTab('orders')}
+            className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-0.5 cursor-pointer"
+          >
+            <span>Orders</span>
+            <CaretRight size={12} weight="bold" />
+          </button>
         </div>
 
+        {/* Metric: Active Sales Reps */}
+        <div
+          id="metric-card-active-reps"
+          data-testid="metric-card-active-reps"
+          className="bg-white px-5 py-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between"
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
+              <ShieldCheck size={20} weight="duotone" />
+            </div>
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">
+                Rep Battery & Sync
+              </span>
+              <div className="flex items-baseline gap-2 mt-0.5">
+                <span className="text-xl font-bold text-slate-900 tabular-nums font-heading">
+                  {avgBattery}%
+                </span>
+                <span className="text-xs text-slate-500">Avg Battery Level</span>
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveAdminTab('reps')}
+            className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-0.5 cursor-pointer"
+          >
+            <span>View All</span>
+            <CaretRight size={12} weight="bold" />
+          </button>
+        </div>
       </div>
 
       {/* VISUAL CHARTS SECTION 1: DOCTORS VISITED TODAY & ACTIVE SALES REPS PROGRESS */}
@@ -631,6 +716,9 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
       </div>
+
+      {/* MONTHLY SALES PERFORMANCE TRENDS (POWERED BY RECHARTS) */}
+      <MonthlySalesPerformanceChart />
 
       {/* VISUAL CHARTS SECTION 2: PRODUCT PORTFOLIO CATEGORIES & MONTHLY REVENUE VELOCITY */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

@@ -14,7 +14,8 @@ import {
   CaretLeft,
   ClockCounterClockwise,
   SquaresFour,
-  FileText
+  FileText,
+  Storefront
 } from '@phosphor-icons/react';
 
 export const AdminSidebar: React.FC = () => {
@@ -26,6 +27,7 @@ export const AdminSidebar: React.FC = () => {
     reps,
     orders,
     doctors,
+    retailCounters,
     auditLogs,
     isSidebarCollapsed,
     setIsSidebarCollapsed
@@ -62,6 +64,13 @@ export const AdminSidebar: React.FC = () => {
       icon: UserCheck,
       badge: `${doctors.length}`,
       badgeColor: 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+    },
+    {
+      id: 'medical_stores' as const,
+      label: 'Medical Stores',
+      icon: Storefront,
+      badge: `${retailCounters.length}`,
+      badgeColor: 'bg-teal-50 text-teal-700 border border-teal-200'
     },
     {
       id: 'products' as const,

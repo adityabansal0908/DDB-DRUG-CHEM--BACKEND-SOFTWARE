@@ -20,6 +20,9 @@ import {
   FirstAid,
   CheckCircle,
   WarningCircle,
+  Warning,
+  Package,
+  XCircle,
   Lightning,
   Eye
 } from '@phosphor-icons/react';
@@ -40,12 +43,13 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ isOp
     notificationSoundEnabled,
     setNotificationSoundEnabled,
     simulateRepLiveEvent,
+    checkAndTriggerStockAlerts,
     setActiveAdminTab,
     setRole,
     role
   } = useApp();
 
-  const [activeFilter, setActiveFilter] = useState<'all' | 'visits' | 'orders' | 'reps' | 'unread'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'visits' | 'orders' | 'inventory' | 'reps' | 'unread'>('all');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close when clicking outside
@@ -83,6 +87,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ isOp
       if (activeFilter === 'unread') return !n.read;
       if (activeFilter === 'visits') return n.type === 'visit_logged';
       if (activeFilter === 'orders') return n.type === 'order_submitted' || n.type === 'sample_requested';
+      if (activeFilter === 'inventory') return n.type === 'reorder_level_reached' || n.type === 'out_of_stock';
       if (activeFilter === 'reps') {
         return (
           n.type === 'rep_login' ||
@@ -114,6 +119,18 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ isOp
 
   const getNotificationIcon = (type: NotificationType) => {
     switch (type) {
+      case 'reorder_level_reached':
+        return (
+          <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 border border-amber-300 shadow-2xs">
+            <Warning size={16} weight="fill" className="text-amber-600" />
+          </div>
+        );
+      case 'out_of_stock':
+        return (
+          <div className="w-8 h-8 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 border border-rose-300 shadow-2xs animate-pulse">
+            <XCircle size={16} weight="fill" className="text-rose-600" />
+          </div>
+        );
       case 'visit_logged':
         return (
           <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-200">
@@ -260,6 +277,18 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ isOp
           >
             Rep Actions
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveFilter('inventory')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1 ${
+              activeFilter === 'inventory'
+                ? 'bg-amber-600 text-white shadow-2xs'
+                : 'text-amber-800 bg-amber-50/80 hover:bg-amber-100 border border-amber-200/80'
+            }`}
+          >
+            <Warning size={12} weight="fill" className={activeFilter === 'inventory' ? 'text-white' : 'text-amber-600'} />
+            <span>Stock Alerts ({notifications.filter(n => n.type === 'reorder_level_reached' || n.type === 'out_of_stock').length})</span>
+          </button>
           {unreadNotificationsCount > 0 && (
             <button
               type="button"
@@ -317,7 +346,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ isOp
           </span>
           <span className="text-[9px] text-blue-600 font-mono">Real-time Push</span>
         </div>
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
           <button
             type="button"
             id="simulate-visit-alert-btn"
@@ -352,6 +381,18 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ isOp
           >
             <MapPin size={11} weight="bold" className="text-blue-600" />
             <span className="truncate">Rep Activity</span>
+          </button>
+
+          <button
+            type="button"
+            id="trigger-reorder-stock-check-btn"
+            data-testid="trigger-reorder-stock-check-btn"
+            onClick={() => checkAndTriggerStockAlerts(undefined, { forceNotify: true })}
+            className="py-1 px-1.5 bg-amber-500 hover:bg-amber-600 text-white border border-amber-600 rounded-lg text-[10px] font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer shadow-2xs active:scale-95"
+            title="Scan inventory and trigger alerts for products reaching re-order level or depleted"
+          >
+            <Warning size={11} weight="fill" />
+            <span className="truncate">Scan Re-Orders</span>
           </button>
         </div>
       </div>
@@ -435,11 +476,36 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ isOp
                     </span>
                   )}
 
+                  {item.metadata?.productName && (
+                    <span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded flex items-center gap-1">
+                      <Package size={10} className="text-amber-600" />
+                      <span className="truncate max-w-[130px]">{item.metadata.productName}</span>
+                    </span>
+                  )}
+
+                  {item.metadata?.currentStock !== undefined && (
+                    <span className={`font-bold px-1.5 py-0.5 rounded border text-[10px] ${
+                      item.metadata.currentStock === 0
+                        ? 'text-rose-700 bg-rose-50 border-rose-200'
+                        : 'text-amber-800 bg-amber-50 border-amber-200'
+                    }`}>
+                      {item.metadata.currentStock === 0 ? '0 Units Left' : `${item.metadata.currentStock} Units Left`}
+                    </span>
+                  )}
+
+                  {item.metadata?.isHighDemand && (
+                    <span className="font-bold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded flex items-center gap-0.5 text-[9px]">
+                      🔥 High Demand
+                    </span>
+                  )}
+
                   {/* Destination link badge */}
                   {item.targetTab && (
                     <span className="ml-auto font-medium text-blue-600 hover:text-blue-800 flex items-center gap-0.5 group-hover:underline">
                       <span>
-                        {item.targetTab === 'monitoring'
+                        {item.targetTab === 'products'
+                          ? 'Inspect in Catalog'
+                          : item.targetTab === 'monitoring'
                           ? 'View Visit'
                           : item.targetTab === 'orders'
                           ? 'Review Order'

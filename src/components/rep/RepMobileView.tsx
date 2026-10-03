@@ -5,6 +5,7 @@ import { DoctorRouteList } from './DoctorRouteList';
 import { CheckinForm } from './CheckinForm';
 import { RepCatalog } from './RepCatalog';
 import { RepActivity } from './RepActivity';
+import { ErrorBoundary } from '../ErrorBoundary';
 import {
   Signpost,
   Camera,
@@ -115,7 +116,9 @@ export const RepMobileView: React.FC = () => {
 
       {/* Main Tab Body */}
       <main className="flex-1 p-4 sm:p-5">
-        {renderActiveTab()}
+        <ErrorBoundary fallbackTitle={`Unable to load ${activeRepTab} section`}>
+          {renderActiveTab()}
+        </ErrorBoundary>
       </main>
 
       {/* Fixed Bottom Navigation Bar (as explicitly specified: fixed bottom-0, z-50, backdrop-blur-xl bg-white/80 border-t border-slate-200) */}

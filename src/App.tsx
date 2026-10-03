@@ -10,10 +10,12 @@ import { OrdersApprovals } from './components/admin/OrdersApprovals';
 import { AuditHistory } from './components/admin/AuditHistory';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { SalesRepReports } from './components/admin/SalesRepReports';
+import { MedicalStoreManagement } from './components/admin/MedicalStoreManagement';
 import { RepMobileView } from './components/rep/RepMobileView';
 import { PhotoModal } from './components/PhotoModal';
 import { SignedOutPage } from './components/SignedOutPage';
 import { Toaster } from 'sonner';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const AppContent: React.FC = () => {
   const { role, activeAdminTab, isSidebarCollapsed, currentUser } = useApp();
@@ -38,26 +40,34 @@ const AppContent: React.FC = () => {
   }
 
   const renderAdminContent = () => {
-    switch (activeAdminTab) {
-      case 'dashboard':
-        return <AdminDashboard />;
-      case 'reports':
-        return <SalesRepReports />;
-      case 'monitoring':
-        return <FieldMonitoring />;
-      case 'doctors':
-        return <DoctorManagement />;
-      case 'products':
-        return <ProductManagement />;
-      case 'reps':
-        return <RepsManagement />;
-      case 'orders':
-        return <OrdersApprovals />;
-      case 'history':
-        return <AuditHistory />;
-      default:
-        return <AdminDashboard />;
-    }
+    return (
+      <ErrorBoundary fallbackTitle={`Unable to load ${activeAdminTab} section`}>
+        {(() => {
+          switch (activeAdminTab) {
+            case 'dashboard':
+              return <AdminDashboard />;
+            case 'reports':
+              return <SalesRepReports />;
+            case 'monitoring':
+              return <FieldMonitoring />;
+            case 'doctors':
+              return <DoctorManagement />;
+            case 'medical_stores':
+              return <MedicalStoreManagement />;
+            case 'products':
+              return <ProductManagement />;
+            case 'reps':
+              return <RepsManagement />;
+            case 'orders':
+              return <OrdersApprovals />;
+            case 'history':
+              return <AuditHistory />;
+            default:
+              return <AdminDashboard />;
+          }
+        })()}
+      </ErrorBoundary>
+    );
   };
 
   return (

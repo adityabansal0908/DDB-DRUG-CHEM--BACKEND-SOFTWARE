@@ -21,8 +21,12 @@ import {
   CaretDown,
   Clock,
   Sparkle,
-  CaretLeft
+  CaretLeft,
+  Eye
 } from '@phosphor-icons/react';
+import { toast } from 'sonner';
+import { generateSalesRepReportPDF } from '../../utils/pdfReportHelper';
+import { PdfReportPreviewModal } from './PdfReportPreviewModal';
 import {
   ResponsiveContainer,
   BarChart,
@@ -52,6 +56,60 @@ export const SalesRepReports: React.FC = () => {
   const [customEndDate, setCustomEndDate] = useState<string>('2026-09-30');
   const [activeLedgerTab, setActiveLedgerTab] = useState<'orders' | 'visits' | 'products'>('orders');
   const [searchTerm, setSearchTerm] = useState<string>('');
+
+  // Formatted PDF State
+  const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  const [pdfFileName, setPdfFileName] = useState<string>('');
+  const [isPdfPreviewOpen, setIsPdfPreviewOpen] = useState<boolean>(false);
+
+  const getPdfFileName = () => {
+    const repSlug = selectedRep ? selectedRep.name.toLowerCase().replace(/\s+/g, '_') : 'all_reps';
+    const dateSlug = datePreset;
+    return `ddb_sales_performance_report_${repSlug}_${dateSlug}.pdf`;
+  };
+
+  const handleExportToPdf = (previewOnly: boolean = false) => {
+    setIsExportingPdf(true);
+    try {
+      const doc = generateSalesRepReportPDF({
+        selectedRep,
+        dateRangeLabel,
+        metrics: {
+          totalGrossRevenue,
+          approvedOrdersCount,
+          totalOrdersCount,
+          averageOrderValue,
+          totalVisitsCount,
+          totalSamplesGiven,
+          conversionRate,
+          quotaAchievementRate
+        },
+        orders: filteredOrders,
+        visits: filteredVisits,
+        productContributions: productContributionData
+      });
+
+      const fileName = getPdfFileName();
+
+      if (previewOnly) {
+        const blobUrl = doc.output('bloburl');
+        setPdfBlobUrl(blobUrl as any);
+        setPdfFileName(fileName);
+        setIsPdfPreviewOpen(true);
+      } else {
+        doc.save(fileName);
+        toast.success(`Exported formatted PDF: ${fileName}`, {
+          description: 'Official document with company letterhead, KPI tables & ledger.'
+        });
+      }
+    } catch (err) {
+      console.error('PDF generation error:', err);
+      toast.error('Failed to generate PDF document');
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
 
   // Determine effective date range based on preset
   const { startDate, endDate, label: dateRangeLabel } = useMemo(() => {
@@ -167,7 +225,7 @@ export const SalesRepReports: React.FC = () => {
   }, [filteredOrders]);
 
   const totalOrdersCount = filteredOrders.length;
-  const approvedOrdersCount = filteredOrders.filter(o => o.status === 'approved').length;
+  const approvedOrdersCount = filteredOrders.filter(o => o.status === 'approved' || o.status === 'dispatched').length;
   const averageOrderValue = totalOrdersCount > 0 ? Math.round(totalGrossRevenue / totalOrdersCount) : 0;
 
   const totalVisitsCount = filteredVisits.length;
@@ -194,7 +252,7 @@ export const SalesRepReports: React.FC = () => {
     filteredOrders.forEach(ord => {
       ord.items?.forEach(item => {
         const prod = products.find(p => p.name === item.productName);
-        const cat = prod?.category || 'General';
+        const cat = prod?.category?.trim() || 'Uncategorized';
         if (!map[item.productName]) {
           map[item.productName] = {
             name: item.productName,
@@ -380,15 +438,41 @@ export const SalesRepReports: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 print:hidden">
+            {/* Export Formatted PDF Button */}
+            <button
+              type="button"
+              id="btn-export-pdf"
+              data-testid="btn-export-pdf"
+              onClick={() => handleExportToPdf(false)}
+              disabled={isExportingPdf}
+              className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white rounded-xl text-xs sm:text-sm font-bold inline-flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+            >
+              <FileText size={18} weight="bold" />
+              <span>{isExportingPdf ? 'Generating PDF...' : 'Export Formatted PDF (.pdf)'}</span>
+            </button>
+
+            {/* Preview PDF */}
+            <button
+              type="button"
+              id="btn-preview-pdf"
+              data-testid="btn-preview-pdf"
+              onClick={() => handleExportToPdf(true)}
+              className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 border border-slate-200 transition-colors cursor-pointer"
+              title="Preview formatted PDF layout in modal"
+            >
+              <Eye size={16} weight="bold" />
+              <span>Preview PDF</span>
+            </button>
+
             <button
               type="button"
               id="btn-export-excel"
               data-testid="btn-export-excel"
               onClick={handleExportToExcel}
-              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-2 shadow-xs transition-colors"
+              className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
             >
-              <DownloadSimple size={18} weight="bold" />
-              <span>Export to Excel (.xlsx)</span>
+              <DownloadSimple size={17} weight="bold" />
+              <span>Excel (.xlsx)</span>
             </button>
 
             <button
@@ -396,10 +480,10 @@ export const SalesRepReports: React.FC = () => {
               id="btn-print-report"
               data-testid="btn-print-report"
               onClick={handlePrint}
-              className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-2 border border-slate-200 transition-colors"
+              className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 border border-slate-200 transition-colors cursor-pointer"
             >
-              <Printer size={18} weight="bold" />
-              <span>Print / PDF</span>
+              <Printer size={16} weight="bold" />
+              <span>Print</span>
             </button>
           </div>
         </div>
@@ -954,8 +1038,12 @@ export const SalesRepReports: React.FC = () => {
                       <td className="py-3.5 px-4 text-center">
                         <span
                           className={`text-[11px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${
-                            order.status === 'approved'
+                            order.status === 'dispatched'
+                              ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                              : order.status === 'approved'
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : order.status === 'rejected'
+                              ? 'bg-red-50 text-red-700 border border-red-200'
                               : 'bg-amber-50 text-amber-700 border border-amber-200'
                           }`}
                         >
@@ -1103,6 +1191,18 @@ export const SalesRepReports: React.FC = () => {
         )}
 
       </div>
+
+      {/* PDF Report Preview Modal */}
+      <PdfReportPreviewModal
+        isOpen={isPdfPreviewOpen}
+        onClose={() => setIsPdfPreviewOpen(false)}
+        pdfBlobUrl={pdfBlobUrl}
+        fileName={pdfFileName}
+        onDownload={() => {
+          handleExportToPdf(false);
+          setIsPdfPreviewOpen(false);
+        }}
+      />
     </div>
   );
 };

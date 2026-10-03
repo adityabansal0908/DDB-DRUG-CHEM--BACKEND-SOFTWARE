@@ -3,12 +3,16 @@ import { useApp } from '../context/AppContext';
 import { X, CheckCircle, Warning, MapPin } from '@phosphor-icons/react';
 
 export const PhotoModal: React.FC = () => {
-  const { previewPhotoUrl, setPreviewPhotoUrl, visits } = useApp();
+  const { previewPhotoUrl, setPreviewPhotoUrl, visits, products } = useApp();
 
   if (!previewPhotoUrl) return null;
 
   // Find associated visit if exists
   const associatedVisit = visits.find(v => v.photoUrl === previewPhotoUrl);
+  // Find associated product if exists
+  const associatedProduct = products.find(
+    p => p.imageUrl === previewPhotoUrl || (p.photos && p.photos.includes(previewPhotoUrl))
+  );
 
   return (
     <div
@@ -24,20 +28,33 @@ export const PhotoModal: React.FC = () => {
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 bg-slate-50/70">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold tracking-[0.15em] uppercase text-blue-600 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-200">
-              Field Visit Verification
-            </span>
-            {associatedVisit && (
-              <span className="text-xs text-slate-500 font-medium">
-                {associatedVisit.timestamp}
-              </span>
+            {associatedProduct ? (
+              <>
+                <span className="text-xs font-bold tracking-[0.15em] uppercase text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
+                  Product Catalog Photo
+                </span>
+                <span className="text-xs text-slate-600 font-medium">
+                  {associatedProduct.category || 'Pharmaceutical Formulation'}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="text-xs font-bold tracking-[0.15em] uppercase text-blue-600 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-200">
+                  Field Visit Verification
+                </span>
+                {associatedVisit && (
+                  <span className="text-xs text-slate-500 font-medium">
+                    {associatedVisit.timestamp}
+                  </span>
+                )}
+              </>
             )}
           </div>
           <button
             id="close-photo-modal-btn"
             data-testid="close-photo-modal-btn"
             onClick={() => setPreviewPhotoUrl(null)}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
           >
             <X size={20} weight="bold" />
           </button>
@@ -46,7 +63,7 @@ export const PhotoModal: React.FC = () => {
         <div className="relative bg-slate-950 flex items-center justify-center max-h-[70vh] overflow-hidden">
           <img
             src={previewPhotoUrl}
-            alt="Field Check-in Evidence"
+            alt={associatedProduct ? associatedProduct.name : 'Field Check-in Evidence'}
             className="max-h-[70vh] w-auto object-contain"
             referrerPolicy="no-referrer"
           />
@@ -86,6 +103,58 @@ export const PhotoModal: React.FC = () => {
                 "{associatedVisit.notes}"
               </div>
             )}
+          </div>
+        )}
+
+        {associatedProduct && !associatedVisit && (
+          <div className="p-5 bg-white space-y-3">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-lg font-bold text-slate-900 font-heading">
+                    {associatedProduct.name}
+                  </h4>
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                    {associatedProduct.form}
+                  </span>
+                </div>
+                <p className="text-sm text-slate-600 mt-0.5">
+                  {associatedProduct.genericName}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Packaging: <span className="font-medium text-slate-700">{associatedProduct.packaging}</span> &bull; Company: <span className="font-medium text-slate-700">{associatedProduct.company || 'DDB DRUG CHEM'}</span>
+                </p>
+              </div>
+              <div className="text-right shrink-0">
+                <span className="text-xs text-slate-500 block">MRP / Selling Rate</span>
+                <span className="text-base font-bold text-slate-900">₹{associatedProduct.mrp?.toFixed(2)}</span>
+                {associatedProduct.sellingRate && (
+                  <span className="text-xs text-emerald-700 block font-semibold">Rate: ₹{associatedProduct.sellingRate?.toFixed(2)}</span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 text-xs text-slate-600">
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
+                <CheckCircle size={14} weight="fill" />
+                Verified Admin Commercial Photo
+              </span>
+              {associatedProduct.stockUnits !== undefined && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-100 text-slate-700 font-medium">
+                  Stock: {associatedProduct.stockUnits} units
+                </span>
+              )}
+              {associatedProduct.batchNo && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-100 text-slate-700 font-medium">
+                  Batch: {associatedProduct.batchNo}
+                </span>
+              )}
+              {associatedProduct.expiryDate && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-amber-50 text-amber-800 border border-amber-200 font-medium">
+                  Exp: {associatedProduct.expiryDate}
+                </span>
+              )}
+            </div>
           </div>
         )}
       </div>

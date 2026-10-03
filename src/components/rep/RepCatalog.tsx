@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CATALOG_COLUMNS, ProductCatalogColumnKey } from '../../types';
+import { formatGst } from '../../utils/gstHelper';
 import {
   MagnifyingGlass,
   Pill,
@@ -33,11 +34,11 @@ export const RepCatalog: React.FC = () => {
 
   // Rep specific hidden columns
   const hiddenColumns = useMemo(() => {
-    return getRepHiddenColumns(currentRep.id);
-  }, [getRepHiddenColumns, currentRep.id]);
+    return currentRep ? getRepHiddenColumns(currentRep.id) : [];
+  }, [getRepHiddenColumns, currentRep]);
 
   const isVisible = (colKey: ProductCatalogColumnKey) => {
-    return isColumnVisibleForRep(currentRep.id, colKey);
+    return currentRep ? isColumnVisibleForRep(currentRep.id, colKey) : true;
   };
 
   // Visible columns for table view
@@ -48,8 +49,8 @@ export const RepCatalog: React.FC = () => {
   const categories = useMemo(() => {
     const list = ['All'];
     const set = new Set<string>();
-    products.forEach((p) => {
-      if (!p.hiddenFromRep && p.category && p.category.trim()) {
+    (products || []).forEach((p) => {
+      if (p && !p.hiddenFromRep && p.category && p.category.trim()) {
         set.add(p.category.trim());
       }
     });
@@ -62,21 +63,28 @@ export const RepCatalog: React.FC = () => {
     return list;
   }, [products]);
 
-  const filtered = products.filter((p) => {
-    // Strictly hide products flagged as hiddenFromRep by admin
-    if (p.hiddenFromRep) return false;
+  const filtered = useMemo(() => {
+    return (products || [])
+      .filter((p) => {
+        if (!p) return false;
+        // Strictly hide products flagged as hiddenFromRep by admin
+        if (p.hiddenFromRep) return false;
 
-    const matchesCat =
-      categoryFilter === 'All' ||
-      (p.category && p.category.toLowerCase().trim() === categoryFilter.toLowerCase().trim());
-    const matchesSearch =
-      searchTerm.trim() === '' ||
-      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.genericName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (p.company && p.company.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (p.category && p.category.toLowerCase().includes(searchTerm.toLowerCase()));
-    return matchesCat && matchesSearch;
-  });
+        const pCat = p.category ? p.category.trim() : '';
+        const matchesCat =
+          categoryFilter === 'All' ||
+          (pCat && pCat.toLowerCase() === categoryFilter.toLowerCase().trim());
+        const term = searchTerm.trim().toLowerCase();
+        const matchesSearch =
+          term === '' ||
+          (p.name && p.name.toLowerCase().includes(term)) ||
+          (p.genericName && p.genericName.toLowerCase().includes(term)) ||
+          (p.company && p.company.toLowerCase().includes(term)) ||
+          (p.category && p.category.toLowerCase().includes(term));
+        return matchesCat && matchesSearch;
+      })
+      .sort((a, b) => (a?.name || '').localeCompare(b?.name || '', undefined, { sensitivity: 'base' }));
+  }, [products, categoryFilter, searchTerm]);
 
   return (
     <div
@@ -107,7 +115,7 @@ export const RepCatalog: React.FC = () => {
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                Territory: <strong className="text-white">{currentRep.district}</strong> • Target: ₹{(currentRep.monthlyTarget / 100000).toFixed(1)}L
+                Territory: <strong className="text-white">{currentRep.territory || (currentRep as any).district}</strong> • Target: ₹{(currentRep.monthlyTarget / 100000).toFixed(1)}L
               </p>
             </div>
           </div>
@@ -129,7 +137,7 @@ export const RepCatalog: React.FC = () => {
                 const rHiddenCount = getRepHiddenColumns(r.id).length;
                 return (
                   <option key={r.id} value={r.id} className="text-slate-900 font-medium">
-                    {r.name} ({r.district}) {rHiddenCount > 0 ? `• ${rHiddenCount} cols hidden` : ''}
+                    {r.name} ({r.territory || (r as any).district}) {rHiddenCount > 0 ? `• ${rHiddenCount} cols hidden` : ''}
                   </option>
                 );
               })}
@@ -258,7 +266,7 @@ export const RepCatalog: React.FC = () => {
                           : ''
                       }`}
                     >
-                      {col.order}. {col.label}
+                      {col.orderNumber || (col as any).order}. {col.label}
                     </th>
                   ))}
                 </tr>
@@ -300,37 +308,45 @@ export const RepCatalog: React.FC = () => {
                             </td>
                           );
                         case 'pricingToStockist': {
-                          const pts = prod.pricingToStockist ?? (prod.sellingRate ? Math.round(prod.sellingRate * 0.88 * 100) / 100 : 0);
+                          const pts = prod.pricingToStockist;
                           return (
                             <td key={col.key} className="py-2.5 px-3 text-right font-semibold text-indigo-700 bg-indigo-50/20 tabular-nums whitespace-nowrap">
-                              ₹{Number(pts).toFixed(2)}
+                              {pts !== undefined && pts !== null && Number(pts) > 0 ? `₹${Number(pts).toFixed(2)}` : <span className="text-slate-300 font-normal select-none">—</span>}
                             </td>
                           );
                         }
                         case 'pricingToRetailer': {
-                          const ptr = prod.pricingToRetailer ?? (prod.sellingRate ? Math.round(prod.sellingRate * 0.94 * 100) / 100 : 0);
+                          const ptr = prod.pricingToRetailer;
                           return (
                             <td key={col.key} className="py-2.5 px-3 text-right font-semibold text-indigo-700 bg-indigo-50/20 tabular-nums whitespace-nowrap">
-                              ₹{Number(ptr).toFixed(2)}
+                              {ptr !== undefined && ptr !== null && Number(ptr) > 0 ? `₹${Number(ptr).toFixed(2)}` : <span className="text-slate-300 font-normal select-none">—</span>}
                             </td>
                           );
                         }
                         case 'sellingRate':
                           return (
                             <td key={col.key} className="py-2.5 px-3 text-right font-bold text-blue-700 tabular-nums whitespace-nowrap">
-                              ₹{Number(prod.sellingRate).toFixed(2)}
+                              {prod.sellingRate !== undefined && prod.sellingRate !== null && prod.sellingRate > 0 ? (
+                                `₹${Number(prod.sellingRate).toFixed(2)}`
+                              ) : (
+                                <span className="text-slate-300 font-normal select-none">—</span>
+                              )}
                             </td>
                           );
                         case 'purchasePrice':
                           return (
                             <td key={col.key} className="py-2.5 px-3 text-right text-slate-500 tabular-nums whitespace-nowrap">
-                              ₹{Number(prod.purchasePrice).toFixed(2)}
+                              {prod.purchasePrice !== undefined && prod.purchasePrice !== null && prod.purchasePrice > 0 ? (
+                                `₹${Number(prod.purchasePrice).toFixed(2)}`
+                              ) : (
+                                <span className="text-slate-300 font-normal select-none">—</span>
+                              )}
                             </td>
                           );
                         case 'gst':
                           return (
                             <td key={col.key} className="py-2.5 px-3 text-center text-slate-700 font-medium whitespace-nowrap">
-                              {prod.gst || '12%'}
+                              {formatGst(prod.gst)}
                             </td>
                           );
                         case 'company':
@@ -342,9 +358,13 @@ export const RepCatalog: React.FC = () => {
                         case 'category':
                           return (
                             <td key={col.key} className="py-2.5 px-3 whitespace-nowrap">
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                                {prod.category || 'General'}
-                              </span>
+                              {prod.category && prod.category.trim() ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                  {prod.category}
+                                </span>
+                              ) : (
+                                <span className="text-slate-300 font-normal select-none px-2">—</span>
+                              )}
                             </td>
                           );
                         default:
@@ -363,9 +383,9 @@ export const RepCatalog: React.FC = () => {
       {viewMode === 'cards' && (
         <div className="space-y-3">
           {filtered.map((prod) => {
-            const retailerMargin = (((prod.mrp - prod.sellingRate) / prod.mrp) * 100).toFixed(1);
-            const pts = prod.pricingToStockist ?? (prod.sellingRate ? Math.round(prod.sellingRate * 0.88 * 100) / 100 : 0);
-            const ptr = prod.pricingToRetailer ?? (prod.sellingRate ? Math.round(prod.sellingRate * 0.94 * 100) / 100 : 0);
+            const retailerMargin = prod.sellingRate && prod.mrp ? (((prod.mrp - prod.sellingRate) / prod.mrp) * 100).toFixed(1) : null;
+            const pts = prod.pricingToStockist;
+            const ptr = prod.pricingToRetailer;
 
             // Compute active pricing pills based on rep visibility
             const showMrp = isVisible('mrp');
@@ -378,6 +398,7 @@ export const RepCatalog: React.FC = () => {
             const showForm = isVisible('form');
             const showCompany = isVisible('company');
             const showCategory = isVisible('category');
+            const showClinicalSpeciality = isVisible('clinicalSpeciality');
             const showGeneric = isVisible('genericName');
 
             return (
@@ -394,9 +415,15 @@ export const RepCatalog: React.FC = () => {
                         {prod.name}
                       </h3>
 
-                      {showCategory && (
+                      {showCategory && prod.category && prod.category.trim() && (
                         <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600">
                           {prod.category}
+                        </span>
+                      )}
+
+                      {showClinicalSpeciality && prod.clinicalSpeciality && prod.clinicalSpeciality.trim() && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                          {prod.clinicalSpeciality}
                         </span>
                       )}
 
@@ -465,7 +492,7 @@ export const RepCatalog: React.FC = () => {
                         6. Pricing to Stockist
                       </span>
                       <span className="text-sm font-bold text-indigo-900 tabular-nums">
-                        ₹{Number(pts).toFixed(2)}
+                        {pts !== undefined && pts !== null && Number(pts) > 0 ? `₹${Number(pts).toFixed(2)}` : '—'}
                       </span>
                     </div>
                   )}
@@ -476,7 +503,7 @@ export const RepCatalog: React.FC = () => {
                         7. Pricing to Retailer
                       </span>
                       <span className="text-sm font-bold text-indigo-900 tabular-nums">
-                        ₹{Number(ptr).toFixed(2)}
+                        {ptr !== undefined && ptr !== null && Number(ptr) > 0 ? `₹${Number(ptr).toFixed(2)}` : '—'}
                       </span>
                     </div>
                   )}
@@ -487,7 +514,7 @@ export const RepCatalog: React.FC = () => {
                         8. Rep Selling Rate
                       </span>
                       <span className="text-sm font-bold text-blue-800 tabular-nums">
-                        ₹{Number(prod.sellingRate).toFixed(2)}
+                        {prod.sellingRate !== undefined && prod.sellingRate !== null && prod.sellingRate > 0 ? `₹${Number(prod.sellingRate).toFixed(2)}` : '—'}
                       </span>
                     </div>
                   )}
@@ -498,7 +525,9 @@ export const RepCatalog: React.FC = () => {
                         9. Purchase Price
                       </span>
                       <span className="text-sm font-medium text-slate-600 tabular-nums">
-                        ₹{Number(prod.purchasePrice).toFixed(2)}
+                        {prod.purchasePrice !== undefined && prod.purchasePrice !== null && prod.purchasePrice > 0
+                          ? `₹${Number(prod.purchasePrice).toFixed(2)}`
+                          : '—'}
                       </span>
                     </div>
                   )}
@@ -509,7 +538,7 @@ export const RepCatalog: React.FC = () => {
                         10. GST Slab
                       </span>
                       <span className="text-sm font-semibold text-slate-700">
-                        {prod.gst || '12%'}
+                        {formatGst(prod.gst)}
                       </span>
                     </div>
                   )}

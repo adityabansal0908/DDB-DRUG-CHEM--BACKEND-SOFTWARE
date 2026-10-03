@@ -13,6 +13,9 @@ export interface ParsedDoctorRow {
   visitingDays: string[];
   visitingSlots: DoctorVisitingSlot[];
   targetVisitsPerMonth: number;
+  targetVisits: number;
+  visitFrequencyValue: number;
+  visitFrequencyUnit: 'days' | 'weeks' | 'months';
   dateOfBirth: string;
   targetedProducts: string[];
   adminRemarks: string;
@@ -223,6 +226,10 @@ export const parseDoctorExcelFile = async (file: File): Promise<DoctorExcelImpor
           let visitingSlotsRaw = '';
           let bestTimeToVisitRaw = '';
           let targetVisitsPerMonth = 4;
+          let targetVisits = 4;
+          let visitFrequencyValue = 1;
+          let visitFrequencyUnit: 'days' | 'weeks' | 'months' = 'months';
+          let timeFrameRaw = '';
           let dateOfBirth = '';
           let targetedProductsRaw = '';
           let adminRemarks = '';
@@ -249,11 +256,22 @@ export const parseDoctorExcelFile = async (file: File): Promise<DoctorExcelImpor
               visitingDaysRaw = String(val).trim();
             } else if (normalized.includes('slot') || normalized.includes('timeslot') || normalized.includes('visitingslot')) {
               visitingSlotsRaw = String(val).trim();
+            } else if (normalized.includes('timeframe') || normalized.includes('frequency') || normalized.includes('period') || normalized.includes('interval')) {
+              timeFrameRaw = String(val).trim();
             } else if (normalized.includes('visit') || normalized.includes('hour') || normalized.includes('timing')) {
-              bestTimeToVisitRaw = String(val).trim();
+              if (normalized.includes('numberofvisit') || normalized.includes('visitcount') || normalized.includes('visittarget')) {
+                const num = parseInt(String(val).replace(/[^0-9]/g, ''), 10);
+                if (!isNaN(num) && num > 0) {
+                  targetVisits = num;
+                  targetVisitsPerMonth = num;
+                }
+              } else {
+                bestTimeToVisitRaw = String(val).trim();
+              }
             } else if (normalized.includes('target') || normalized.includes('quota') || normalized.includes('monthly')) {
               const num = parseInt(String(val).replace(/[^0-9]/g, ''), 10);
               targetVisitsPerMonth = isNaN(num) || num <= 0 ? 4 : num;
+              targetVisits = targetVisitsPerMonth;
             } else if (normalized.includes('birth') || normalized.includes('dob') || normalized.includes('bday')) {
               if (val instanceof Date) {
                 const yyyy = val.getFullYear();
@@ -269,6 +287,22 @@ export const parseDoctorExcelFile = async (file: File): Promise<DoctorExcelImpor
               adminRemarks = String(val).trim();
             }
           });
+
+          // Parse timeframe e.g. "15 days", "2 weeks", "1 month", "30 days", "3 months"
+          if (timeFrameRaw) {
+            const tfLower = timeFrameRaw.toLowerCase();
+            const digits = parseInt(tfLower.replace(/[^0-9]/g, ''), 10);
+            if (!isNaN(digits) && digits > 0) {
+              visitFrequencyValue = digits;
+            }
+            if (tfLower.includes('day')) {
+              visitFrequencyUnit = 'days';
+            } else if (tfLower.includes('week')) {
+              visitFrequencyUnit = 'weeks';
+            } else if (tfLower.includes('month')) {
+              visitFrequencyUnit = 'months';
+            }
+          }
 
           // Validation
           if (!name) {
@@ -314,6 +348,9 @@ export const parseDoctorExcelFile = async (file: File): Promise<DoctorExcelImpor
             visitingDays,
             visitingSlots,
             targetVisitsPerMonth,
+            targetVisits,
+            visitFrequencyValue,
+            visitFrequencyUnit,
             dateOfBirth,
             targetedProducts,
             adminRemarks
@@ -361,7 +398,8 @@ export const downloadDoctorExcelTemplate = (catalogProducts: Product[] = []) => 
     'Contact Number',
     'Visiting Days (e.g. Mon, Tue, Wed, Thu, Fri, Sat)',
     'Visiting Time Slots (Multiple separated by ;)',
-    'Monthly Target Visits',
+    'Number of Visits',
+    'Time Frame (e.g. 15 days, 2 weeks, 1 month)',
     'Doctor Birth Date (YYYY-MM-DD)',
     'Targeted Products (Comma-separated)',
     'Admin Remarks'
@@ -385,6 +423,7 @@ export const downloadDoctorExcelTemplate = (catalogProducts: Product[] = []) => 
       'Mon, Tue, Wed, Thu, Fri, Sat',
       'Morning: 10:00 AM - 01:00 PM; Evening: 06:00 PM - 08:30 PM',
       4,
+      '1 month',
       '1979-05-14',
       `${sampleP1}, ${sampleP2}`,
       'Senior cardiologist; key opinion leader for hypertension division.'
@@ -399,7 +438,8 @@ export const downloadDoctorExcelTemplate = (catalogProducts: Product[] = []) => 
       '+91 98110 54321',
       'Mon, Wed, Fri',
       'Afternoon: 01:30 PM - 03:30 PM; Evening: 07:00 PM - 09:00 PM',
-      3,
+      2,
+      '2 weeks',
       '1983-09-22',
       `${sampleP3}`,
       'Prefers afternoon detailing. Interested in bulk clinical sampling.'
@@ -414,7 +454,8 @@ export const downloadDoctorExcelTemplate = (catalogProducts: Product[] = []) => 
       '+91 99201 88402',
       'Mon, Tue, Thu, Sat',
       'Chamber 1: 09:30 AM - 12:30 PM; Chamber 2: 04:00 PM - 06:30 PM',
-      4,
+      3,
+      '15 days',
       '1975-12-08',
       `${sampleP4}, ${sampleP2}`,
       'Focus on pediatric and respiratory anti-infective formulations.'
@@ -430,6 +471,7 @@ export const downloadDoctorExcelTemplate = (catalogProducts: Product[] = []) => 
       'Mon, Tue, Wed, Thu, Fri, Sat',
       'Morning OPD: 11:00 AM - 02:00 PM; Evening OPD: 06:30 PM - 09:00 PM',
       3,
+      '1 month',
       '1981-08-30',
       `${sampleP1}`,
       'High prescription writer for metabolic disorder portfolio.'
@@ -448,7 +490,8 @@ export const downloadDoctorExcelTemplate = (catalogProducts: Product[] = []) => 
     { wch: 18 }, // Contact
     { wch: 35 }, // Visiting Days
     { wch: 50 }, // Visiting Time Slots (Multiple)
-    { wch: 16 }, // Target Visits
+    { wch: 18 }, // Number of Visits
+    { wch: 26 }, // Time Frame (x days, x weeks, x months)
     { wch: 20 }, // Birth Date
     { wch: 32 }, // Targeted Products
     { wch: 45 }  // Admin Remarks

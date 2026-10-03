@@ -1,5 +1,8 @@
 import * as XLSX from 'xlsx';
 import { Product, ProductBatch } from '../types';
+import { formatGst } from './gstHelper';
+
+export { formatGst };
 
 export interface ParsedProductRow {
   name: string;
@@ -7,17 +10,20 @@ export interface ParsedProductRow {
   packaging: string;
   form: string;
   mrp: number;
-  pricingToStockist: number;
-  pricingToRetailer: number;
-  sellingRate: number;
-  purchasePrice: number;
-  gst: string | number;
+  pricingToStockist?: number;
+  pricingToRetailer?: number;
+  sellingRate?: number;
+  purchasePrice?: number;
+  gst?: string | number;
   company: string;
   stockUnits: number;
   batchNo: string;
   expiryDate: string;
   batches: ProductBatch[];
-  category: string;
+  category?: string;
+  clinicalSpeciality?: string;
+  reorderLevel?: number;
+  isHighDemand?: boolean;
 }
 
 export interface ExcelImportResult {
@@ -68,21 +74,34 @@ export const parseExcelFile = async (file: File): Promise<ExcelImportResult> => 
           let packaging = '';
           let dosageForm = '';
           let mrp = 0;
-          let pricingToStockist = 0;
-          let pricingToRetailer = 0;
-          let sellingPrice = 0;
-          let purchasePrice = 0;
+          let pricingToStockist: number | undefined = undefined;
+          let pricingToRetailer: number | undefined = undefined;
+          let sellingPrice: number | undefined = undefined;
+          let purchasePrice: number | undefined = undefined;
           let gst: string | number = '12%';
           let company = '';
-          let categoryInput = '';
+          let categoryInput: string | undefined = undefined;
+          let clinicalSpecialityInput: string | undefined = undefined;
           let stock = 0;
           let batchNo = '';
           let expiry = '';
+          let reorderLevel: number | undefined = undefined;
+          let isHighDemand: boolean | undefined = undefined;
 
           // Loop row keys
           Object.keys(row).forEach((k) => {
             const normalized = normalizeHeader(k);
             const val = row[k];
+            const rawStr = val !== undefined && val !== null ? String(val).trim() : '';
+            const isCellBlank =
+              rawStr === '' ||
+              rawStr === '-' ||
+              rawStr === '--' ||
+              rawStr.toLowerCase() === 'n/a' ||
+              rawStr.toLowerCase() === 'na' ||
+              rawStr.toLowerCase() === 'null' ||
+              rawStr.toLowerCase() === 'none' ||
+              rawStr.toLowerCase() === 'nil';
 
             if (normalized.includes('product') || normalized.includes('brand') || normalized === 'name' || normalized === 'item') {
               productName = String(val).trim();
@@ -99,8 +118,13 @@ export const parseExcelFile = async (file: File): Promise<ExcelImportResult> => 
               normalized.includes('pricingtostockist') ||
               normalized.includes('ratetostockist')
             ) {
-              const num = parseFloat(String(val).replace(/[^0-9.]/g, ''));
-              pricingToStockist = isNaN(num) ? 0 : num;
+              // Only fill if entered explicitly by admin and not blank
+              if (!isCellBlank) {
+                const num = parseFloat(rawStr.replace(/[^0-9.]/g, ''));
+                if (!isNaN(num) && num > 0) {
+                  pricingToStockist = num;
+                }
+              }
             } else if (
               normalized.includes('retailer') ||
               normalized === 'ptr' ||
@@ -108,35 +132,82 @@ export const parseExcelFile = async (file: File): Promise<ExcelImportResult> => 
               normalized.includes('pricingtoretailer') ||
               normalized.includes('ratetoretailer')
             ) {
-              const num = parseFloat(String(val).replace(/[^0-9.]/g, ''));
-              pricingToRetailer = isNaN(num) ? 0 : num;
+              // Only fill if entered explicitly by admin and not blank
+              if (!isCellBlank) {
+                const num = parseFloat(rawStr.replace(/[^0-9.]/g, ''));
+                if (!isNaN(num) && num > 0) {
+                  pricingToRetailer = num;
+                }
+              }
             } else if (normalized.includes('mrp')) {
-              const num = parseFloat(String(val).replace(/[^0-9.]/g, ''));
-              mrp = isNaN(num) ? 0 : num;
+              if (!isCellBlank) {
+                const num = parseFloat(rawStr.replace(/[^0-9.]/g, ''));
+                mrp = isNaN(num) ? 0 : num;
+              }
             } else if (normalized.includes('selling') || normalized.includes('reprate') || normalized.includes('repprice')) {
-              const num = parseFloat(String(val).replace(/[^0-9.]/g, ''));
-              sellingPrice = isNaN(num) ? 0 : num;
+              // Only fill if entered explicitly by admin and not blank
+              if (!isCellBlank) {
+                const num = parseFloat(rawStr.replace(/[^0-9.]/g, ''));
+                if (!isNaN(num) && num > 0) {
+                  sellingPrice = num;
+                }
+              }
             } else if (normalized.includes('purchase') || normalized.includes('cost') || normalized.includes('buying')) {
-              const num = parseFloat(String(val).replace(/[^0-9.]/g, ''));
-              purchasePrice = isNaN(num) ? 0 : num;
+              if (!isCellBlank) {
+                const num = parseFloat(rawStr.replace(/[^0-9.]/g, ''));
+                purchasePrice = isNaN(num) || num <= 0 ? undefined : num;
+              }
             } else if (normalized.includes('gst') || normalized.includes('tax')) {
-              gst = String(val).trim() || '12%';
+              if (!isCellBlank) {
+                gst = formatGst(rawStr);
+              }
             } else if (normalized.includes('company') || normalized.includes('manufacturer') || normalized.includes('mfg') || normalized.includes('maker') || normalized.includes('pharma') || normalized.includes('brandowner')) {
-              company = String(val).trim();
+              if (!isCellBlank) {
+                company = rawStr;
+              }
+            } else if (
+              normalized.includes('clinicalspeciality') ||
+              normalized.includes('clinicalspecialty') ||
+              normalized.includes('division') ||
+              normalized.includes('medicalspeciality') ||
+              normalized.includes('targetspeciality') ||
+              normalized.includes('pediatric') ||
+              normalized.includes('paediatric') ||
+              normalized.includes('gynaecology') ||
+              normalized.includes('gynecology')
+            ) {
+              if (!isCellBlank && rawStr.length > 0) {
+                clinicalSpecialityInput = rawStr;
+              }
             } else if (
               normalized.includes('category') ||
+              normalized.includes('therapeutic') ||
               normalized.includes('speciality') ||
               normalized.includes('specialty') ||
               normalized.includes('segment') ||
-              normalized.includes('therapeutic') ||
               normalized === 'cat'
             ) {
-              categoryInput = String(val).trim();
+              // STRICT RULE: Only fill if explicitly entered by admin. If blank, keep as undefined!
+              if (!isCellBlank && rawStr.length > 0) {
+                categoryInput = rawStr;
+              }
+            } else if (normalized.includes('reorder') || normalized.includes('reorderlevel') || normalized.includes('safetystock')) {
+              if (!isCellBlank) {
+                const num = parseInt(rawStr.replace(/[^0-9]/g, ''), 10);
+                if (!isNaN(num) && num > 0) {
+                  reorderLevel = num;
+                }
+              }
+            } else if (normalized.includes('highdemand') || normalized.includes('fastmoving') || normalized.includes('velocity')) {
+              if (!isCellBlank) {
+                const lower = rawStr.toLowerCase();
+                isHighDemand = lower === 'yes' || lower === 'true' || lower === '1' || lower === 'high' || lower === 'y';
+              }
             } else if (normalized.includes('stock') || normalized.includes('qty') || normalized.includes('quantity')) {
-              const num = parseInt(String(val).replace(/[^0-9]/g, ''), 10);
+              const num = parseInt(rawStr.replace(/[^0-9]/g, ''), 10);
               stock = isNaN(num) ? 0 : num;
             } else if (normalized.includes('batch') || normalized.includes('lot')) {
-              batchNo = String(val).trim();
+              batchNo = rawStr;
             } else if (normalized.includes('exp') || normalized.includes('expiry')) {
               // Handle Excel date object or string
               if (val instanceof Date) {
@@ -144,7 +215,7 @@ export const parseExcelFile = async (file: File): Promise<ExcelImportResult> => 
                 const year = val.getFullYear();
                 expiry = `${month}/${year}`;
               } else {
-                expiry = String(val).trim();
+                expiry = rawStr;
               }
             }
           });
@@ -155,38 +226,20 @@ export const parseExcelFile = async (file: File): Promise<ExcelImportResult> => 
             return;
           }
 
-          // Format fallback defaults
+          // Format fallback defaults (for physical packaging/batch metadata only)
           if (!dosageForm) dosageForm = 'Tablet';
           if (!packaging) packaging = '10x10 Strip';
           if (!saltName) saltName = productName;
           if (!stock) stock = 1000;
           if (!batchNo) batchNo = 'STD-BATCH';
           if (!expiry) expiry = '12/2028';
-          if (sellingPrice === 0 && mrp > 0) sellingPrice = Math.round(mrp * 0.75);
-          if (purchasePrice === 0 && sellingPrice > 0) purchasePrice = Math.round(sellingPrice * 0.8);
+          
+          // STRICT RULE: Do NOT auto-compute or auto-assign sellingPrice, purchasePrice, pricingToStockist, pricingToRetailer, or Category!
+          // Leave blank on the output if kept blank by the admin in Excel!
+          const finalCategory = categoryInput !== undefined && categoryInput.trim().length > 0 ? categoryInput.trim() : undefined;
+          const finalClinicalSpeciality = clinicalSpecialityInput !== undefined && clinicalSpecialityInput.trim().length > 0 ? clinicalSpecialityInput.trim() : undefined;
 
-          // Category: Use column input directly if provided (open field), or infer as fallback
-          let finalCategory = categoryInput || '';
-          if (!finalCategory) {
-            const lowerName = (productName + ' ' + saltName).toLowerCase();
-            if (lowerName.includes('amox') || lowerName.includes('clav') || lowerName.includes('azith') || lowerName.includes('cefix') || lowerName.includes('cipro') || lowerName.includes('doxy')) {
-              finalCategory = 'Antibiotics';
-            } else if (lowerName.includes('telmi') || lowerName.includes('amlod') || lowerName.includes('atorv') || lowerName.includes('rosuv') || lowerName.includes('kard') || lowerName.includes('olmes')) {
-              finalCategory = 'Cardiology';
-            } else if (lowerName.includes('panto') || lowerName.includes('omep') || lowerName.includes('rabep') || lowerName.includes('cid') || lowerName.includes('domp')) {
-              finalCategory = 'Gastroenterology';
-            } else if (lowerName.includes('mont') || lowerName.includes('levo') || lowerName.includes('cough') || lowerName.includes('resp') || lowerName.includes('inhaler') || lowerName.includes('ambrox')) {
-              finalCategory = 'Respiratory';
-            } else if (lowerName.includes('glim') || lowerName.includes('metfor') || lowerName.includes('vild') || lowerName.includes('dapa') || lowerName.includes('diab')) {
-              finalCategory = 'Diabetology';
-            } else if (lowerName.includes('dolo') || lowerName.includes('para') || lowerName.includes('aceclo') || lowerName.includes('pain') || lowerName.includes('ibu')) {
-              finalCategory = 'Analgesics';
-            } else {
-              finalCategory = 'General';
-            }
-          }
-
-          // Parse multiple batches in column 10/11 if comma/semicolon/pipe separated
+          // Parse multiple batches in column if comma/semicolon/pipe separated
           const rawBatchList = batchNo.split(/[,;\n|]+/).map((b) => b.trim()).filter(Boolean);
           const rawExpList = expiry.split(/[,;\n|]+/).map((e) => e.trim()).filter(Boolean);
 
@@ -216,14 +269,17 @@ export const parseExcelFile = async (file: File): Promise<ExcelImportResult> => 
             // Append batch string
             existing.batchNo = `${existing.batchNo}, ${batchNo}`;
             existing.stockUnits += stock;
-            // Keep latest pricing if non-zero
+            // Only update fields if explicitly provided in this row
             if (mrp > 0) existing.mrp = mrp;
-            if (pricingToStockist > 0) existing.pricingToStockist = pricingToStockist;
-            if (pricingToRetailer > 0) existing.pricingToRetailer = pricingToRetailer;
-            if (sellingPrice > 0) existing.sellingRate = sellingPrice;
-            if (purchasePrice > 0) existing.purchasePrice = purchasePrice;
+            if (pricingToStockist !== undefined) existing.pricingToStockist = pricingToStockist;
+            if (pricingToRetailer !== undefined) existing.pricingToRetailer = pricingToRetailer;
+            if (sellingPrice !== undefined) existing.sellingRate = sellingPrice;
+            if (purchasePrice !== undefined) existing.purchasePrice = purchasePrice;
             if (company) existing.company = company;
-            if (categoryInput) existing.category = categoryInput;
+            if (finalCategory) existing.category = finalCategory;
+            if (finalClinicalSpeciality) existing.clinicalSpeciality = finalClinicalSpeciality;
+            if (reorderLevel !== undefined) existing.reorderLevel = reorderLevel;
+            if (isHighDemand !== undefined) existing.isHighDemand = isHighDemand;
           } else {
             productMap.set(key, {
               name: productName,
@@ -231,8 +287,8 @@ export const parseExcelFile = async (file: File): Promise<ExcelImportResult> => 
               packaging: packaging,
               form: dosageForm,
               mrp: mrp,
-              pricingToStockist: pricingToStockist || (sellingPrice > 0 ? Math.round(sellingPrice * 0.88 * 100) / 100 : 0),
-              pricingToRetailer: pricingToRetailer || (sellingPrice > 0 ? Math.round(sellingPrice * 0.94 * 100) / 100 : 0),
+              pricingToStockist: pricingToStockist,
+              pricingToRetailer: pricingToRetailer,
               sellingRate: sellingPrice,
               purchasePrice: purchasePrice,
               gst: gst,
@@ -241,7 +297,10 @@ export const parseExcelFile = async (file: File): Promise<ExcelImportResult> => 
               batchNo: batchNo,
               expiryDate: expiry,
               batches: parsedBatches,
-              category: finalCategory
+              category: finalCategory,
+              clinicalSpeciality: finalClinicalSpeciality,
+              reorderLevel: reorderLevel,
+              isHighDemand: isHighDemand
             });
           }
         });
@@ -278,7 +337,8 @@ export const downloadExcelTemplate = () => {
     'Purchase Price',
     'GST',
     'Company',
-    'Category'
+    'Category',
+    'Clinical Speciality'
   ];
 
   const sampleRows = [
@@ -294,6 +354,7 @@ export const downloadExcelTemplate = () => {
       125.0,
       '12%',
       'Torrent Pharmaceuticals',
+      'Cardiology',
       'Cardiology'
     ],
     [
@@ -308,7 +369,8 @@ export const downloadExcelTemplate = () => {
       138.0,
       '12%',
       'Alkem Laboratories',
-      'Antibiotics'
+      'Antibiotics',
+      'Paediatric'
     ],
     [
       'Pantocid DSR',
@@ -322,7 +384,8 @@ export const downloadExcelTemplate = () => {
       115.0,
       '12%',
       'Sun Pharma Ltd',
-      'Gastroenterology'
+      'Gastroenterology',
+      'General Medicine'
     ],
     [
       'Montair-LC',
@@ -336,7 +399,8 @@ export const downloadExcelTemplate = () => {
       108.0,
       '12%',
       'Cipla Ltd',
-      'Respiratory'
+      'Respiratory',
+      'Paediatric'
     ],
     [
       'Cefix-O 200',
@@ -350,7 +414,8 @@ export const downloadExcelTemplate = () => {
       148.0,
       '12%',
       'Mankind Pharma Ltd',
-      'Antibiotics'
+      'Antibiotics',
+      'Gynaecology'
     ],
     [
       'Dolokard-SP',
@@ -364,13 +429,14 @@ export const downloadExcelTemplate = () => {
       74.0,
       '12%',
       'Mankind Pharma Ltd',
-      'Analgesics'
+      'Analgesics',
+      'Orthopaedics'
     ]
   ];
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);
 
-  // Set column widths for the 12 columns
+  // Set column widths for the 13 columns
   ws['!cols'] = [
     { wch: 22 }, // 1. Product Name
     { wch: 45 }, // 2. Salt Name/ Composition
@@ -383,7 +449,8 @@ export const downloadExcelTemplate = () => {
     { wch: 14 }, // 9. Purchase Price
     { wch: 10 }, // 10. GST
     { wch: 26 }, // 11. Company
-    { wch: 18 }  // 12. Category
+    { wch: 18 }, // 12. Category
+    { wch: 22 }  // 13. Clinical Speciality
   ];
 
   const wb = XLSX.utils.book_new();
@@ -411,7 +478,8 @@ export const exportProductsToExcel = (
     'Purchase Price',
     'GST',
     'Company',
-    'Category'
+    'Category',
+    'Clinical Speciality'
   ];
 
   const rows = productsToExport.map((p) => [
@@ -420,13 +488,22 @@ export const exportProductsToExcel = (
     p.packaging || '10x10 Tablets',
     p.form || 'Tablet',
     Number(p.mrp) || 0,
-    Number(p.pricingToStockist ?? (p.sellingRate ? p.sellingRate * 0.88 : 0)) || 0,
-    Number(p.pricingToRetailer ?? (p.sellingRate ? p.sellingRate * 0.94 : 0)) || 0,
-    Number(p.sellingRate) || 0,
-    Number(p.purchasePrice) || 0,
-    p.gst || '12%',
+    p.pricingToStockist !== undefined && p.pricingToStockist !== null && Number(p.pricingToStockist) > 0
+      ? Number(p.pricingToStockist)
+      : '',
+    p.pricingToRetailer !== undefined && p.pricingToRetailer !== null && Number(p.pricingToRetailer) > 0
+      ? Number(p.pricingToRetailer)
+      : '',
+    p.sellingRate !== undefined && p.sellingRate !== null && Number(p.sellingRate) > 0
+      ? Number(p.sellingRate)
+      : '',
+    p.purchasePrice !== undefined && p.purchasePrice !== null && Number(p.purchasePrice) > 0
+      ? Number(p.purchasePrice)
+      : '',
+    formatGst(p.gst),
     p.company || 'DDB DRUG CHEM',
-    p.category || 'General'
+    p.category && p.category.trim() && p.category.trim() !== '-' ? p.category.trim() : '',
+    p.clinicalSpeciality && p.clinicalSpeciality.trim() && p.clinicalSpeciality.trim() !== '-' ? p.clinicalSpeciality.trim() : ''
   ]);
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
@@ -443,7 +520,8 @@ export const exportProductsToExcel = (
     { wch: 14 }, // Purchase Price
     { wch: 10 }, // GST
     { wch: 26 }, // Company
-    { wch: 18 }  // Category
+    { wch: 18 }, // Category
+    { wch: 22 }  // Clinical Speciality
   ];
 
   const wb = XLSX.utils.book_new();

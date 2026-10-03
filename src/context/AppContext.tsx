@@ -27,6 +27,7 @@ import {
 } from '../data/mockData';
 import { toast } from 'sonner';
 import { playNotificationChime } from '../utils/sound';
+import { applyFifoDeduction } from '../utils/fifoHelper';
 import { signInAnonymously, onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import {
@@ -121,28 +122,74 @@ const INITIAL_USERS: (AuthUser & { passwordHash: string })[] = [
 
 const INITIAL_AUDIT_LOGS: AuditLog[] = [
   {
-    id: 'log-1',
-    timestamp: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
-    formattedTime: 'Today, 10:45 AM',
-    userEmail: 'admin@ddbdrugchem.com',
-    userName: 'Dr. Rajesh Verma',
-    userRole: 'admin',
-    actionType: 'LOGIN',
-    module: 'Authentication',
-    targetItemName: 'Admin Session',
-    details: 'Logged into DDB DRUG CHEM Operations Console from IP 192.168.1.10'
-  },
-  {
-    id: 'log-2',
-    timestamp: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
-    formattedTime: 'Today, 10:50 AM',
-    userEmail: 'admin@ddbdrugchem.com',
-    userName: 'Dr. Rajesh Verma',
+    id: 'log-stock-reset',
+    timestamp: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
+    formattedTime: 'Today, 11:48 AM',
+    userEmail: 'adityabansal0810@gmail.com',
+    userName: 'Aditya Bansal (Admin)',
     userRole: 'admin',
     actionType: 'UPDATE',
     module: 'Product Catalog',
-    targetItemName: 'Formulary Configuration',
-    details: 'Enabled manufacturing company tracking field across all 9-column rate cards'
+    targetItemName: 'All 16 Formulations (Full Catalog)',
+    details: 'Zeroed warehouse inventory levels to 0 units and set PTS, PTR, and Selling Price to unassigned/blank pending commercial pricing review.',
+    previousStateSnippet: 'Total Inventory: 16,000 units across 16 formulations; standard default price points active.',
+    newStateSnippet: 'Warehouse Stock: 0 units (All Formulations Out of Stock); PTS: [Blank], PTR: [Blank], Selling Price: [Blank].',
+    changeCategory: 'stock',
+    fieldDiffs: [
+      { field: 'stockUnits', label: 'Warehouse Stock', oldValue: '16,000 units', newValue: '0 units (Depleted)', diff: -16000 },
+      { field: 'pricingToStockist', label: 'Pricing to Stockist (PTS)', oldValue: 'Commercial Rates', newValue: '— (Blank)' },
+      { field: 'pricingToRetailer', label: 'Price to Retailer (PTR)', oldValue: 'Commercial Rates', newValue: '— (Blank)' },
+      { field: 'sellingRate', label: 'Selling Price Rate', oldValue: 'Commercial Rates', newValue: '— (Blank)' }
+    ],
+    reason: 'Initial Inventory Baseline Reset: zero stock available, commercial pricing undecided'
+  },
+  {
+    id: 'log-2',
+    timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+    formattedTime: 'Today, 11:15 AM',
+    userEmail: 'adityabansal0810@gmail.com',
+    userName: 'Aditya Bansal (Admin)',
+    userRole: 'admin',
+    actionType: 'UPDATE',
+    module: 'Product Catalog',
+    targetItemName: 'TelmiKard 40-H',
+    details: 'Configured formulation safety threshold to 500 units and verified packaging as 10x10 Alu-Alu strip.',
+    previousStateSnippet: 'Reorder Level: 250 units | Packaging: Standard box',
+    newStateSnippet: 'Reorder Level: 500 units | Packaging: 10x10 Alu-Alu strip',
+    changeCategory: 'formulation',
+    fieldDiffs: [
+      { field: 'reorderLevel', label: 'Safety Re-Order Level', oldValue: '250 units', newValue: '500 units', diff: 250 },
+      { field: 'packaging', label: 'Packaging Format', oldValue: 'Standard box', newValue: '10x10 Alu-Alu' }
+    ],
+    reason: 'Cardiology Formulary Master Specification Verification'
+  },
+  {
+    id: 'log-3',
+    timestamp: new Date(Date.now() - 95 * 60 * 1000).toISOString(),
+    formattedTime: 'Today, 10:25 AM',
+    userEmail: 'admin@ddbdrugchem.com',
+    userName: 'Operations Dispatcher',
+    userRole: 'admin',
+    actionType: 'UPDATE',
+    module: 'Product Catalog',
+    targetItemName: 'AmoxyClav 625 Duo',
+    details: 'Verified antimicrobial quality control specifications and assigned indication profile.',
+    previousStateSnippet: 'Status: Pending Review',
+    newStateSnippet: 'Status: Verified for Distribution',
+    changeCategory: 'general',
+    reason: 'Regulatory QC Quarantine Clearance'
+  },
+  {
+    id: 'log-4',
+    timestamp: new Date(Date.now() - 140 * 60 * 1000).toISOString(),
+    formattedTime: 'Today, 09:40 AM',
+    userEmail: 'adityabansal0810@gmail.com',
+    userName: 'Aditya Bansal (Admin)',
+    userRole: 'admin',
+    actionType: 'LOGIN',
+    module: 'Authentication',
+    targetItemName: 'Administrator Session',
+    details: 'Logged into DDB DRUG CHEM Administrative Operations Console from authenticated workstation.'
   }
 ];
 
@@ -170,7 +217,15 @@ interface AppContextType {
   addMultipleProducts: (products: Omit<Product, 'id'>[], mode?: 'append' | 'replace') => void;
   updateProduct: (updatedOrId: Product | string, maybeUpdates?: Partial<Product>) => void;
   deleteProduct: (productId: string) => void;
+  isProductOrdered: (product: Product) => boolean;
+  getProductOrderCount: (product: Product) => number;
+  mergeProducts: (
+    primaryProductId: string,
+    secondaryProductId: string,
+    options?: { combineStock?: boolean; combineBatches?: boolean }
+  ) => void;
   bulkUpdateProducts: (productIds: string[], updates: Partial<Product>, actionDescription?: string) => void;
+  batchUpdateMultipleProducts: (products: Product[], actionDescription?: string) => void;
   bulkDeleteProducts: (productIds: string[]) => void;
   clearAllProducts: () => void;
 
@@ -195,7 +250,10 @@ interface AppContextType {
     targetItemName: string,
     details: string,
     previousStateSnippet?: string,
-    newStateSnippet?: string
+    newStateSnippet?: string,
+    changeCategory?: 'stock' | 'pricing' | 'formulation' | 'general',
+    fieldDiffs?: AuditLog['fieldDiffs'],
+    reason?: string
   ) => void;
 
   // Authentication & Session Timeout
@@ -249,12 +307,14 @@ interface AppContextType {
   ) => void;
   retailCounters: RetailCounter[];
   addRetailCounter: (counter: Omit<RetailCounter, 'id'>) => void;
+  addMultipleRetailCounters?: (counters: Omit<RetailCounter, 'id'>[], mode?: 'append' | 'replace') => void;
   updateRetailCounter: (id: string, updates: Partial<RetailCounter>) => void;
   deleteRetailCounter: (id: string) => void;
   orders: OrderOrSampleRequest[];
   addOrder: (order: Omit<OrderOrSampleRequest, 'id'>) => void;
   approveOrder: (orderId: string) => void;
   rejectOrder: (orderId: string) => void;
+  dispatchOrder: (orderId: string, applyFifo?: boolean) => void;
   previewPhotoUrl: string | null;
   setPreviewPhotoUrl: (url: string | null) => void;
   selectedDoctorForCheckin: Doctor | null;
@@ -281,6 +341,10 @@ interface AppContextType {
   notificationSoundEnabled: boolean;
   setNotificationSoundEnabled: (enabled: boolean | ((prev: boolean) => boolean)) => void;
   simulateRepLiveEvent: (presetType?: 'visit' | 'order' | 'checkin' | 'route' | 'login') => void;
+  checkAndTriggerStockAlerts: (
+    customProductsList?: Product[],
+    options?: { forceNotify?: boolean }
+  ) => { reorderCount: number; outOfStockCount: number };
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -465,16 +529,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Products
   const [products, setProducts] = useState<Product[]>(() => {
     const saved = localStorage.getItem('ddb_products');
+    const isZeroStockApplied = localStorage.getItem('ddb_zero_stock_blank_pricing_v2') === 'true';
+
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
+          if (!isZeroStockApplied) {
+            const updated = parsed.map(p => ({
+              ...p,
+              stockUnits: 0,
+              pricingToStockist: undefined,
+              pricingToRetailer: undefined,
+              sellingRate: undefined,
+              status: 'out_of_stock' as const,
+              batches: p.batches ? p.batches.map(b => ({ ...b, stock: 0 })) : []
+            }));
+            localStorage.setItem('ddb_products', JSON.stringify(updated));
+            localStorage.setItem('ddb_zero_stock_blank_pricing_v2', 'true');
+            return updated;
+          }
           return parsed;
         }
       } catch (e) {
         return INITIAL_PRODUCTS;
       }
     }
+    localStorage.setItem('ddb_zero_stock_blank_pricing_v2', 'true');
     return INITIAL_PRODUCTS;
   });
 
@@ -707,6 +788,99 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     deleteDocument('notifications', notificationId).catch(() => {});
   }, []);
 
+  // Automated Re-Order & Stock Alert System:
+  // Monitors stock levels, distinguishes between 'reorder_level_reached' and 'out_of_stock'
+  const alertedStockStatesRef = useRef<Map<string, 'reorder' | 'out_of_stock'>>(new Map());
+
+  const checkAndTriggerStockAlerts = useCallback(
+    (customProductsList?: Product[], options?: { forceNotify?: boolean }): { reorderCount: number; outOfStockCount: number } => {
+      const prods = customProductsList || products;
+      let reorderCount = 0;
+      let outOfStockCount = 0;
+
+      prods.forEach(prod => {
+        const stock = prod.stockUnits ?? 0;
+        const reorderThreshold = prod.reorderLevel ?? 500;
+        const isHighDemand = prod.isHighDemand ?? false;
+        const previousAlertState = alertedStockStatesRef.current.get(prod.id);
+
+        if (stock === 0) {
+          outOfStockCount++;
+          // Trigger 'out_of_stock' alert if not already alerted or forceNotify
+          if (options?.forceNotify || previousAlertState !== 'out_of_stock') {
+            alertedStockStatesRef.current.set(prod.id, 'out_of_stock');
+            addNotification({
+              type: 'out_of_stock',
+              title: `🚨 Out of Stock: ${prod.name}`,
+              message: `Formulation "${prod.name}" (${prod.packaging}) is completely depleted (0 units in depot). Field sales order fulfillment is paused.`,
+              repId: 'system-inventory',
+              repName: 'Depot Warehouse Monitor',
+              priority: 'urgent',
+              targetTab: 'products',
+              metadata: {
+                productId: prod.id,
+                productName: prod.name,
+                currentStock: 0,
+                reorderLevel: reorderThreshold,
+                isHighDemand,
+                details: 'Critical depot depletion alert'
+              }
+            });
+          }
+        } else if (stock <= reorderThreshold) {
+          reorderCount++;
+          // Trigger 'reorder_level_reached' alert if not already alerted for reorder or forceNotify
+          // Specifically automated alert when high-demand products reach re-order level!
+          if (options?.forceNotify || previousAlertState !== 'reorder') {
+            alertedStockStatesRef.current.set(prod.id, 'reorder');
+            const alertTitle = isHighDemand
+              ? `🔥 Re-Order Alert (High-Demand): ${prod.name}`
+              : `⚠️ Re-Order Level Reached: ${prod.name}`;
+
+            const alertMsg = isHighDemand
+              ? `High-demand formulation "${prod.name}" has reached re-order level (${stock.toLocaleString()} units remaining <= safety threshold of ${reorderThreshold.toLocaleString()} units). Urgent procurement replenishment advised.`
+              : `Formulation "${prod.name}" has reached re-order level with ${stock.toLocaleString()} units remaining (safety threshold: ${reorderThreshold.toLocaleString()} units).`;
+
+            addNotification({
+              type: 'reorder_level_reached',
+              title: alertTitle,
+              message: alertMsg,
+              repId: 'system-inventory',
+              repName: 'Procurement Automation',
+              priority: isHighDemand ? 'urgent' : 'high',
+              targetTab: 'products',
+              metadata: {
+                productId: prod.id,
+                productName: prod.name,
+                currentStock: stock,
+                reorderLevel: reorderThreshold,
+                isHighDemand,
+                details: `Re-order threshold: ${reorderThreshold} units`
+              }
+            });
+          }
+        } else {
+          // Stock is healthy above reorder threshold - clear state so future drops alert again
+          alertedStockStatesRef.current.delete(prod.id);
+        }
+      });
+
+      return { reorderCount, outOfStockCount };
+    },
+    [products, addNotification]
+  );
+
+  // Automated initial inventory check on mount or when products list changes
+  useEffect(() => {
+    if (products.length > 0) {
+      // Small timeout to allow initial state hydration
+      const timer = setTimeout(() => {
+        checkAndTriggerStockAlerts(products);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [products.length]);
+
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
   const [selectedDoctorForCheckin, setSelectedDoctorForCheckin] = useState<Doctor | null>(null);
 
@@ -799,7 +973,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       targetItemName: string,
       details: string,
       previousStateSnippet?: string,
-      newStateSnippet?: string
+      newStateSnippet?: string,
+      changeCategory?: 'stock' | 'pricing' | 'formulation' | 'general',
+      fieldDiffs?: AuditLog['fieldDiffs'],
+      reason?: string
     ) => {
       const now = new Date();
       const formattedTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -807,7 +984,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         timestamp: now.toISOString(),
         formattedTime: `Today, ${formattedTime}`,
-        userEmail: currentUser?.email || 'admin@ddbdrugchem.com',
+        userEmail: currentUser?.email || 'adityabansal0810@gmail.com',
         userName: currentUser?.name || 'Administrator',
         userRole: currentUser?.role || role,
         actionType,
@@ -815,7 +992,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         targetItemName,
         details,
         previousStateSnippet,
-        newStateSnippet
+        newStateSnippet,
+        changeCategory: changeCategory || (actionType === 'IMPORT' ? 'general' : undefined),
+        fieldDiffs,
+        reason
       };
 
       setAuditLogs(prev => [newLog, ...prev]);
@@ -890,6 +1070,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     const unsubProducts = subscribeToCollection<Product>('products', (items) => {
       if (items && items.length > 0) {
+        const isSynced = localStorage.getItem('ddb_firestore_zero_stock_synced_v2') === 'true';
+        if (!isSynced) {
+          const hasStaleValues = items.some(
+            p => (p.stockUnits ?? 0) > 0 || p.pricingToStockist !== undefined || p.pricingToRetailer !== undefined || p.sellingRate !== undefined
+          );
+          if (hasStaleValues) {
+            const sanitized = items.map(p => ({
+              ...p,
+              stockUnits: 0,
+              pricingToStockist: undefined,
+              pricingToRetailer: undefined,
+              sellingRate: undefined,
+              status: 'out_of_stock' as const,
+              batches: p.batches ? p.batches.map(b => ({ ...b, stock: 0 })) : []
+            }));
+            setProducts(sanitized);
+            batchSaveDocuments('products', sanitized).catch(() => {});
+            localStorage.setItem('ddb_firestore_zero_stock_synced_v2', 'true');
+            return;
+          }
+          localStorage.setItem('ddb_firestore_zero_stock_synced_v2', 'true');
+        }
         setProducts(items);
       }
     });
@@ -1313,6 +1515,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       batchSaveDocuments('products', createdProducts).catch(() => {});
     }
 
+    // Automatically evaluate re-order levels and out-of-stock for imported products
+    checkAndTriggerStockAlerts(createdProducts);
+
     addAuditLog(
       'IMPORT',
       'Product Catalog',
@@ -1325,13 +1530,58 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  // Product Order Verification & Protection
+  const isProductOrdered = useCallback(
+    (product: Product): boolean => {
+      return orders.some((order) =>
+        order.items?.some(
+          (item) =>
+            (item.productId && item.productId === product.id) ||
+            (item.productName &&
+              item.productName.trim().toLowerCase() === product.name.trim().toLowerCase())
+        )
+      );
+    },
+    [orders]
+  );
+
+  const getProductOrderCount = useCallback(
+    (product: Product): number => {
+      let count = 0;
+      orders.forEach((order) => {
+        order.items?.forEach((item) => {
+          if (item.productId && item.productId === product.id) {
+            count++;
+          } else if (
+            !item.productId &&
+            item.productName &&
+            item.productName.trim().toLowerCase() === product.name.trim().toLowerCase()
+          ) {
+            count++;
+          }
+        });
+      });
+      return count;
+    },
+    [orders]
+  );
+
   const deleteProduct = (productId: string) => {
-    const target = products.find(p => p.id === productId);
+    const target = products.find((p) => p.id === productId);
     if (!target) return;
+
+    // Hard compliance constraint: Any formulation with placed orders can NEVER be deleted
+    if (isProductOrdered(target)) {
+      toast.error(`Cannot delete "${target.name}"`, {
+        description:
+          'Orders have been placed on this formulation. In compliance with sales & audit records, it can never be deleted from the database.'
+      });
+      return;
+    }
 
     pushUndoSnapshot(`Deleted formulation "${target.name}"`);
 
-    setProducts(prev => prev.filter(p => p.id !== productId));
+    setProducts((prev) => prev.filter((p) => p.id !== productId));
     deleteDocument('products', productId).catch(() => {});
 
     addAuditLog(
@@ -1348,6 +1598,92 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         onClick: () => undoProductAction()
       }
     });
+  };
+
+  const mergeProducts = (
+    primaryProductId: string,
+    secondaryProductId: string,
+    options?: { combineStock?: boolean; combineBatches?: boolean }
+  ) => {
+    const primary = products.find((p) => p.id === primaryProductId);
+    const secondary = products.find((p) => p.id === secondaryProductId);
+    if (!primary || !secondary) {
+      toast.error('Merge failed: Formulation not found');
+      return;
+    }
+
+    pushUndoSnapshot(`Merged "${secondary.name}" into "${primary.name}"`);
+
+    const combineStock = options?.combineStock ?? true;
+    const combineBatches = options?.combineBatches ?? true;
+
+    const updatedPrimary: Product = {
+      ...primary,
+      stockUnits: combineStock
+        ? (primary.stockUnits || 0) + (secondary.stockUnits || 0)
+        : primary.stockUnits,
+      batches: combineBatches
+        ? [...(primary.batches || []), ...(secondary.batches || [])]
+        : primary.batches
+    };
+
+    const secondaryHasOrders = isProductOrdered(secondary);
+
+    if (secondaryHasOrders) {
+      // RULE: Product with orders can NEVER be deleted from database!
+      // Consolidate inventory into primary, and preserve secondary as merged/archived record
+      const updatedSecondary: Product = {
+        ...secondary,
+        status: 'merged',
+        hiddenFromRep: true,
+        mergedIntoId: primaryProductId,
+        stockUnits: combineStock ? 0 : secondary.stockUnits
+      };
+
+      setProducts((prev) =>
+        prev.map((p) => {
+          if (p.id === primaryProductId) return updatedPrimary;
+          if (p.id === secondaryProductId) return updatedSecondary;
+          return p;
+        })
+      );
+
+      saveDocument('products', updatedPrimary).catch(() => {});
+      saveDocument('products', updatedSecondary).catch(() => {});
+
+      addAuditLog(
+        'UPDATE',
+        'Product Catalog',
+        primary.name,
+        `Merged duplicate formulation "${secondary.name}" (${secondary.id}) into "${primary.name}" (${primary.id}). Secondary has active orders so it remains archived in database.`
+      );
+
+      toast.success(`Merged inventory into "${primary.name}"`, {
+        description:
+          'Secondary formulation has placed orders and is preserved in the database to safeguard order history.'
+      });
+    } else {
+      // Secondary has no orders placed: safe to delete from database
+      setProducts((prev) =>
+        prev
+          .filter((p) => p.id !== secondaryProductId)
+          .map((p) => (p.id === primaryProductId ? updatedPrimary : p))
+      );
+
+      saveDocument('products', updatedPrimary).catch(() => {});
+      deleteDocument('products', secondaryProductId).catch(() => {});
+
+      addAuditLog(
+        'UPDATE',
+        'Product Catalog',
+        primary.name,
+        `Merged formulations with same name "${primary.name}". Removed duplicate formulation without orders.`
+      );
+
+      toast.success(`Successfully merged "${primary.name}"`, {
+        description: 'Stock consolidated and un-ordered duplicate removed from database.'
+      });
+    }
   };
 
   const updateProduct = (updatedOrId: Product | string, maybeUpdates?: Partial<Product>) => {
@@ -1370,15 +1706,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Generate diff summary
     const changes: string[] = [];
-    if (prevProduct.name !== updated.name) changes.push(`Name: "${prevProduct.name}" -> "${updated.name}"`);
-    if (prevProduct.category !== updated.category) changes.push(`Category: "${prevProduct.category || 'General'}" -> "${updated.category || 'General'}"`);
-    if (prevProduct.company !== updated.company) changes.push(`Company: "${prevProduct.company || ''}" -> "${updated.company || ''}"`);
-    if (prevProduct.mrp !== updated.mrp) changes.push(`MRP: ₹${prevProduct.mrp} -> ₹${updated.mrp}`);
-    if (prevProduct.pricingToStockist !== updated.pricingToStockist) changes.push(`PTS: ₹${prevProduct.pricingToStockist || 0} -> ₹${updated.pricingToStockist || 0}`);
-    if (prevProduct.pricingToRetailer !== updated.pricingToRetailer) changes.push(`PTR: ₹${prevProduct.pricingToRetailer || 0} -> ₹${updated.pricingToRetailer || 0}`);
-    if (prevProduct.sellingRate !== updated.sellingRate) changes.push(`Selling: ₹${prevProduct.sellingRate} -> ₹${updated.sellingRate}`);
-    if (prevProduct.purchasePrice !== updated.purchasePrice) changes.push(`Purchase: ₹${prevProduct.purchasePrice} -> ₹${updated.purchasePrice}`);
-    if (prevProduct.packaging !== updated.packaging) changes.push(`Packaging: "${prevProduct.packaging}" -> "${updated.packaging}"`);
+    const diffs: NonNullable<AuditLog['fieldDiffs']> = [];
+    let changeCategory: 'stock' | 'pricing' | 'formulation' | 'general' = 'general';
+
+    const oldStock = prevProduct.stockUnits ?? 0;
+    const newStock = updated.stockUnits ?? 0;
+
+    if (prevProduct.name !== updated.name) {
+      changes.push(`Name: "${prevProduct.name}" -> "${updated.name}"`);
+      diffs.push({ field: 'name', label: 'Formulation Name', oldValue: prevProduct.name, newValue: updated.name });
+    }
+    if (oldStock !== newStock) {
+      changeCategory = 'stock';
+      const diff = newStock - oldStock;
+      changes.push(`Stock: ${oldStock.toLocaleString()} -> ${newStock.toLocaleString()} units (${diff >= 0 ? '+' : ''}${diff.toLocaleString()})`);
+      diffs.push({
+        field: 'stockUnits',
+        label: 'Warehouse Stock',
+        oldValue: `${oldStock.toLocaleString()} units`,
+        newValue: `${newStock.toLocaleString()} units`,
+        diff
+      });
+    }
+    if (prevProduct.pricingToStockist !== updated.pricingToStockist) {
+      changeCategory = changeCategory === 'stock' ? 'general' : 'pricing';
+      const oldVal = prevProduct.pricingToStockist !== undefined ? `₹${prevProduct.pricingToStockist}` : '—';
+      const newVal = updated.pricingToStockist !== undefined ? `₹${updated.pricingToStockist}` : '—';
+      changes.push(`PTS: ${oldVal} -> ${newVal}`);
+      diffs.push({ field: 'pricingToStockist', label: 'Pricing to Stockist (PTS)', oldValue: oldVal, newValue: newVal });
+    }
+    if (prevProduct.pricingToRetailer !== updated.pricingToRetailer) {
+      changeCategory = changeCategory === 'stock' ? 'general' : 'pricing';
+      const oldVal = prevProduct.pricingToRetailer !== undefined ? `₹${prevProduct.pricingToRetailer}` : '—';
+      const newVal = updated.pricingToRetailer !== undefined ? `₹${updated.pricingToRetailer}` : '—';
+      changes.push(`PTR: ${oldVal} -> ${newVal}`);
+      diffs.push({ field: 'pricingToRetailer', label: 'Price to Retailer (PTR)', oldValue: oldVal, newValue: newVal });
+    }
+    if (prevProduct.sellingRate !== updated.sellingRate) {
+      changeCategory = changeCategory === 'stock' ? 'general' : 'pricing';
+      const oldVal = prevProduct.sellingRate !== undefined ? `₹${prevProduct.sellingRate}` : '—';
+      const newVal = updated.sellingRate !== undefined ? `₹${updated.sellingRate}` : '—';
+      changes.push(`Selling Rate: ${oldVal} -> ${newVal}`);
+      diffs.push({ field: 'sellingRate', label: 'Selling Price Rate', oldValue: oldVal, newValue: newVal });
+    }
+    if (prevProduct.mrp !== updated.mrp) {
+      changeCategory = changeCategory === 'stock' ? 'general' : 'pricing';
+      changes.push(`MRP: ₹${prevProduct.mrp} -> ₹${updated.mrp}`);
+      diffs.push({ field: 'mrp', label: 'MRP', oldValue: `₹${prevProduct.mrp}`, newValue: `₹${updated.mrp}` });
+    }
+    if (prevProduct.purchasePrice !== updated.purchasePrice) {
+      changes.push(`Purchase: ₹${prevProduct.purchasePrice || 0} -> ₹${updated.purchasePrice || 0}`);
+      diffs.push({ field: 'purchasePrice', label: 'Purchase Rate', oldValue: `₹${prevProduct.purchasePrice || 0}`, newValue: `₹${updated.purchasePrice || 0}` });
+    }
+    if (prevProduct.category !== updated.category) {
+      changes.push(`Category: "${prevProduct.category || 'General'}" -> "${updated.category || 'General'}"`);
+    }
+    if (prevProduct.company !== updated.company) {
+      changes.push(`Company: "${prevProduct.company || ''}" -> "${updated.company || ''}"`);
+    }
+    if (prevProduct.packaging !== updated.packaging) {
+      changes.push(`Packaging: "${prevProduct.packaging}" -> "${updated.packaging}"`);
+    }
     if (prevProduct.hiddenFromRep !== updated.hiddenFromRep) {
       changes.push(updated.hiddenFromRep ? 'Hidden from Sales Reps' : 'Made Visible to Sales Reps');
     }
@@ -1388,8 +1776,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'Product Catalog',
       updated.name,
       changes.length > 0 ? changes.join(', ') : `Modified specifications for ${updated.name}`,
-      `MRP ₹${prevProduct.mrp}, Selling ₹${prevProduct.sellingRate}, Company: ${prevProduct.company || 'DDB DRUG CHEM'}`,
-      `MRP ₹${updated.mrp}, Selling ₹${updated.sellingRate}, Company: ${updated.company || 'DDB DRUG CHEM'}`
+      `Stock: ${oldStock.toLocaleString()} units | MRP: ₹${prevProduct.mrp} | PTS: ${prevProduct.pricingToStockist ? `₹${prevProduct.pricingToStockist}` : '—'}`,
+      `Stock: ${newStock.toLocaleString()} units | MRP: ₹${updated.mrp} | PTS: ${updated.pricingToStockist ? `₹${updated.pricingToStockist}` : '—'}`,
+      changeCategory,
+      diffs.length > 0 ? diffs : undefined
     );
 
     toast.success(`Updated "${updated.name}"`, {
@@ -1415,6 +1805,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
     if (updatedList.length > 0) {
       batchSaveDocuments('products', updatedList).catch(() => {});
+      checkAndTriggerStockAlerts(updatedList);
     }
 
     addAuditLog(
@@ -1433,18 +1824,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const bulkDeleteProducts = (productIds: string[]) => {
-    if (productIds.length === 0) return;
-    const desc = `Bulk deleted ${productIds.length} formulation(s)`;
+  const batchUpdateMultipleProducts = (updatedProds: Product[], actionDescription?: string) => {
+    if (updatedProds.length === 0) return;
+    const desc = actionDescription || `Batch updated pricing & stock for ${updatedProds.length} formulation(s)`;
     pushUndoSnapshot(desc);
 
-    setProducts(prev => prev.filter(p => !productIds.includes(p.id)));
-    batchDeleteDocuments('products', productIds).catch(() => {});
+    const updateMap = new Map(updatedProds.map(p => [p.id, p]));
+    setProducts(prev => prev.map(p => updateMap.get(p.id) || p));
+    batchSaveDocuments('products', updatedProds).catch(() => {});
+    checkAndTriggerStockAlerts(updatedProds);
+
+    addAuditLog(
+      'UPDATE',
+      'Product Catalog',
+      `${updatedProds.length} Formulations`,
+      desc
+    );
+
+    toast.success(desc, {
+      description: `Saved batch pricing & stock levels for ${updatedProds.length} formulations`,
+      action: {
+        label: 'Undo',
+        onClick: () => undoProductAction()
+      }
+    });
+  };
+
+  const bulkDeleteProducts = (productIds: string[]) => {
+    if (productIds.length === 0) return;
+
+    const targets = products.filter((p) => productIds.includes(p.id));
+    const protectedProducts = targets.filter((p) => isProductOrdered(p));
+    const deletableProducts = targets.filter((p) => !isProductOrdered(p));
+
+    if (protectedProducts.length > 0) {
+      toast.warning(`Protected ${protectedProducts.length} product(s) with placed orders`, {
+        description: `${protectedProducts
+          .map((p) => p.name)
+          .slice(0, 3)
+          .join(', ')} cannot be deleted because orders have been placed on them.`
+      });
+    }
+
+    if (deletableProducts.length === 0) {
+      toast.error('Deletion Blocked', {
+        description: 'All selected products have placed orders and can never be deleted from the database.'
+      });
+      return;
+    }
+
+    const deletableIds = deletableProducts.map((p) => p.id);
+    const desc = `Bulk deleted ${deletableIds.length} formulation(s)`;
+    pushUndoSnapshot(desc);
+
+    setProducts((prev) => prev.filter((p) => !deletableIds.includes(p.id)));
+    batchDeleteDocuments('products', deletableIds).catch(() => {});
 
     addAuditLog(
       'DELETE',
       'Product Catalog',
-      `${productIds.length} Formulations`,
+      `${deletableIds.length} Formulations`,
       desc
     );
 
@@ -1458,26 +1897,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const clearAllProducts = () => {
     if (products.length === 0) return;
-    pushUndoSnapshot(`Cleared ${products.length} catalog items`);
 
-    const idsToDelete = products.map(p => p.id);
-    setProducts([]);
+    const protectedProducts = products.filter((p) => isProductOrdered(p));
+    const deletableProducts = products.filter((p) => !isProductOrdered(p));
+
+    if (deletableProducts.length === 0) {
+      toast.error('Cannot clear catalog', {
+        description: 'All products currently have active orders placed on them and can never be deleted from the database.'
+      });
+      return;
+    }
+
+    pushUndoSnapshot(`Cleared ${deletableProducts.length} catalog items`);
+
+    const idsToDelete = deletableProducts.map((p) => p.id);
+    setProducts(protectedProducts);
     batchDeleteDocuments('products', idsToDelete).catch(() => {});
-    localStorage.removeItem('ddb_products');
+
+    if (protectedProducts.length > 0) {
+      toast.info(`Preserved ${protectedProducts.length} product(s) with placed orders`, {
+        description: `Cleared ${deletableProducts.length} un-ordered formulations from catalog.`
+      });
+    } else {
+      toast.info('All products cleared from catalog', {
+        action: {
+          label: 'Undo',
+          onClick: () => undoProductAction()
+        }
+      });
+    }
 
     addAuditLog(
       'CLEAR',
       'Product Catalog',
       'Entire Catalog',
-      `Cleared all ${products.length} formulations from the product catalog`
+      `Cleared ${deletableProducts.length} products (preserved ${protectedProducts.length} with orders)`
     );
-
-    toast.info('All products cleared from catalog', {
-      action: {
-        label: 'Undo',
-        onClick: () => undoProductAction()
-      }
-    });
   };
 
   const updateRepHiddenColumns = useCallback((repId: string, hiddenColumns: ProductCatalogColumnKey[]) => {
@@ -1793,6 +2248,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     toast.error('Order rejected');
   };
 
+  const dispatchOrder = (orderId: string, applyFifo: boolean = false) => {
+    const targetOrder = orders.find(o => o.id === orderId);
+    setOrders(prev => prev.map(o => (o.id === orderId ? { ...o, status: 'dispatched' } : o)));
+    updateDocument('orders', orderId, { status: 'dispatched' }).catch(() => {});
+
+    // Deduct stock for dispatched formulations and trigger automated reorder / out-of-stock check
+    if (targetOrder && targetOrder.items && targetOrder.items.length > 0) {
+      const affectedProducts: Product[] = [];
+      setProducts(prevProducts => {
+        return prevProducts.map(p => {
+          const item = targetOrder.items.find(
+            it => (it.productId && it.productId === p.id) ||
+                  (it.productName && it.productName.trim().toLowerCase() === p.name.trim().toLowerCase())
+          );
+          if (item) {
+            const qty = item.qty || (item as any).quantity || 0;
+            let updated: Product;
+            if (applyFifo) {
+              updated = applyFifoDeduction(p, qty);
+            } else {
+              const newStock = Math.max(0, (p.stockUnits ?? 0) - qty);
+              const reorderThreshold = p.reorderLevel ?? 500;
+              const newStatus = newStock === 0 ? 'out_of_stock' : newStock <= reorderThreshold ? 'low_stock' : 'active';
+              updated = { ...p, stockUnits: newStock, status: newStatus as any };
+            }
+            affectedProducts.push(updated);
+            saveDocument('products', updated).catch(() => {});
+            return updated;
+          }
+          return p;
+        });
+      });
+
+      if (affectedProducts.length > 0) {
+        checkAndTriggerStockAlerts(affectedProducts);
+      }
+    }
+
+    addAuditLog(
+      'UPDATE',
+      'Orders',
+      `Order ${orderId}`,
+      applyFifo
+        ? `Order ${orderId} dispatched with FIFO batch auto-deduction applied to batches closest to expiry.`
+        : `Order ${orderId} dispatched with standard warehouse stock deduction.`
+    );
+
+    toast.success(
+      applyFifo ? 'Order Dispatched with FIFO Batch Auto-Deduction' : 'Order marked as Dispatched & Invoiced',
+      {
+        description: applyFifo
+          ? 'Inventory successfully allocated from earliest expiring batches.'
+          : 'Consignment tracking & delivery challan generated'
+      }
+    );
+  };
+
   const updateRep = useCallback((repId: string, updates: Partial<SalesRep>) => {
     setReps(prev => prev.map(r => (r.id === repId ? { ...r, ...updates } : r)));
     setCurrentRep(prev => (prev.id === repId ? { ...prev, ...updates } : prev));
@@ -1928,6 +2440,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       `Registered new retail counter assigned to ${newCounter.assignedRepName} (${newCounter.territory})`
     );
     toast.success(`Retail counter "${newCounter.name}" registered successfully`);
+  }, [addAuditLog]);
+
+  const addMultipleRetailCounters = useCallback((countersData: Omit<RetailCounter, 'id'>[], mode: 'append' | 'replace' = 'append') => {
+    const timestamp = Date.now();
+    const newCounters: RetailCounter[] = countersData.map((data, index) => ({
+      ...data,
+      id: `counter-${timestamp}-${index}`
+    }));
+
+    if (mode === 'replace') {
+      setRetailCounters(newCounters);
+    } else {
+      setRetailCounters(prev => [...newCounters, ...prev]);
+    }
+
+    addAuditLog(
+      'IMPORT',
+      'Field Telemetry',
+      `${newCounters.length} Medical Stores`,
+      `Bulk imported ${newCounters.length} medical stores/retail counters via Excel (${mode === 'replace' ? 'replaced existing' : 'appended'})`
+    );
   }, [addAuditLog]);
 
   const updateRetailCounter = useCallback((id: string, updates: Partial<RetailCounter>) => {
@@ -2125,7 +2658,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addMultipleProducts,
         updateProduct,
         deleteProduct,
+        isProductOrdered,
+        getProductOrderCount,
+        mergeProducts,
         bulkUpdateProducts,
+        batchUpdateMultipleProducts,
         bulkDeleteProducts,
         clearAllProducts,
         repColumnPermissions,
@@ -2165,12 +2702,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateRepTerritory,
         retailCounters,
         addRetailCounter,
+        addMultipleRetailCounters,
         updateRetailCounter,
         deleteRetailCounter,
         orders,
         addOrder,
         approveOrder,
         rejectOrder,
+        dispatchOrder,
         previewPhotoUrl,
         setPreviewPhotoUrl,
         selectedDoctorForCheckin,
@@ -2187,7 +2726,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteNotification,
         notificationSoundEnabled,
         setNotificationSoundEnabled,
-        simulateRepLiveEvent
+        simulateRepLiveEvent,
+        checkAndTriggerStockAlerts
       }}
     >
       {children}

@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import { parseExcelFile, downloadExcelTemplate, ParsedProductRow } from '../../utils/excelHelper';
+import { parseExcelFile, downloadExcelTemplate, ParsedProductRow, formatGst } from '../../utils/excelHelper';
 import {
   FileXls,
   UploadSimple,
@@ -70,27 +70,51 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ isOpen, onCl
   const handleCommit = () => {
     if (parsedData.length === 0) return;
 
-    const productsToSave = parsedData.map((p) => ({
-      name: p.name,
-      genericName: p.genericName,
-      packaging: p.packaging || 'Standard Packaging',
-      form: p.form || 'Tablet',
-      mrp: Number(p.mrp) || 0,
-      pricingToStockist: Number(p.pricingToStockist) || (p.sellingRate ? Math.round(p.sellingRate * 0.88 * 100) / 100 : 0),
-      pricingToRetailer: Number(p.pricingToRetailer) || (p.sellingRate ? Math.round(p.sellingRate * 0.94 * 100) / 100 : 0),
-      sellingRate: Number(p.sellingRate) || 0,
-      purchasePrice: Number(p.purchasePrice) || 0,
-      gst: p.gst || '12%',
-      company: p.company || 'DDB DRUG CHEM',
-      stockUnits: Number(p.stockUnits) || 0,
-      batchNo: p.batchNo || 'BATCH-01',
-      expiryDate: p.expiryDate || '12/2028',
-      batches: p.batches || [{ batchNumber: p.batchNo, expiryDate: p.expiryDate, stock: p.stockUnits }],
-      category: p.category as any,
-      minOrderQty: 10,
-      status: (Number(p.stockUnits) === 0 ? 'out_of_stock' : Number(p.stockUnits) < 500 ? 'low_stock' : 'active') as any,
-      indication: 'Standard clinical formulary entry'
-    }));
+    const productsToSave = parsedData.map((p) => {
+      const pts = p.pricingToStockist !== undefined && !isNaN(p.pricingToStockist) && Number(p.pricingToStockist) > 0
+        ? Number(p.pricingToStockist)
+        : undefined;
+      const ptr = p.pricingToRetailer !== undefined && !isNaN(p.pricingToRetailer) && Number(p.pricingToRetailer) > 0
+        ? Number(p.pricingToRetailer)
+        : undefined;
+      const sr = p.sellingRate !== undefined && !isNaN(p.sellingRate) && Number(p.sellingRate) > 0
+        ? Number(p.sellingRate)
+        : undefined;
+      const pp = p.purchasePrice !== undefined && !isNaN(p.purchasePrice) && Number(p.purchasePrice) > 0
+        ? Number(p.purchasePrice)
+        : undefined;
+      const cat = p.category && String(p.category).trim() !== '' && String(p.category).trim() !== '-'
+        ? String(p.category).trim()
+        : undefined;
+      const clinicalSpec = p.clinicalSpeciality && String(p.clinicalSpeciality).trim() !== '' && String(p.clinicalSpeciality).trim() !== '-'
+        ? String(p.clinicalSpeciality).trim()
+        : undefined;
+
+      return {
+        name: p.name,
+        genericName: p.genericName,
+        packaging: p.packaging || 'Standard Packaging',
+        form: p.form || 'Tablet',
+        mrp: Number(p.mrp) || 0,
+        pricingToStockist: pts,
+        pricingToRetailer: ptr,
+        sellingRate: sr,
+        purchasePrice: pp,
+        gst: formatGst(p.gst),
+        company: p.company || 'DDB DRUG CHEM',
+        stockUnits: Number(p.stockUnits) || 0,
+        batchNo: p.batchNo || 'BATCH-01',
+        expiryDate: p.expiryDate || '12/2028',
+        batches: p.batches || [{ batchNumber: p.batchNo, expiryDate: p.expiryDate, stock: p.stockUnits }],
+        category: cat,
+        clinicalSpeciality: clinicalSpec,
+        minOrderQty: 10,
+        reorderLevel: p.reorderLevel !== undefined && p.reorderLevel > 0 ? p.reorderLevel : 500,
+        isHighDemand: p.isHighDemand ?? false,
+        status: (Number(p.stockUnits) === 0 ? 'out_of_stock' : Number(p.stockUnits) < (p.reorderLevel || 500) ? 'low_stock' : 'active') as any,
+        indication: 'Standard clinical formulary entry'
+      };
+    });
 
     addMultipleProducts(productsToSave, importMode);
     handleReset();
@@ -156,51 +180,65 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ isOpen, onCl
           <div className="flex items-center justify-between font-semibold text-slate-800">
             <span className="flex items-center gap-1.5">
               <ListBullets size={16} className="text-blue-600" />
-              Required 10 Columns in your Excel / CSV:
+              12 Columns Supported in your Excel / CSV Spreadsheet:
+            </span>
+            <span className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+              ✓ Blank cells remain strictly blank
             </span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-5 md:grid-cols-10 gap-2 text-[11px] font-mono">
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-1.5 text-[11px] font-mono">
             <div className="bg-white p-1.5 rounded border border-slate-200">
               <span className="text-slate-400 block text-[9px] font-sans">COL 1</span>
-              <strong className="text-slate-900">Product Name</strong>
+              <strong className="text-slate-900 truncate block">Product Name</strong>
             </div>
             <div className="bg-white p-1.5 rounded border border-slate-200">
               <span className="text-slate-400 block text-[9px] font-sans">COL 2</span>
-              <strong className="text-slate-900">Salt Name/Comp</strong>
+              <strong className="text-slate-900 truncate block">Salt / Comp</strong>
             </div>
             <div className="bg-white p-1.5 rounded border border-slate-200">
               <span className="text-slate-400 block text-[9px] font-sans">COL 3</span>
-              <strong className="text-slate-900">Packaging</strong>
+              <strong className="text-slate-900 truncate block">Packaging</strong>
             </div>
             <div className="bg-white p-1.5 rounded border border-slate-200">
               <span className="text-slate-400 block text-[9px] font-sans">COL 4</span>
-              <strong className="text-slate-900">Dosage form</strong>
+              <strong className="text-slate-900 truncate block">Dosage Form</strong>
             </div>
             <div className="bg-white p-1.5 rounded border border-slate-200">
               <span className="text-slate-400 block text-[9px] font-sans">COL 5</span>
-              <strong className="text-slate-900">MRP</strong>
+              <strong className="text-slate-900 truncate block">MRP</strong>
             </div>
-            <div className="bg-white p-1.5 rounded border border-slate-200">
-              <span className="text-slate-400 block text-[9px] font-sans">COL 6</span>
-              <strong className="text-slate-900">Selling Price</strong>
+            <div className="bg-white p-1.5 rounded border border-indigo-200 bg-indigo-50/40">
+              <span className="text-indigo-600 block text-[9px] font-sans font-bold">COL 6</span>
+              <strong className="text-indigo-900 truncate block" title="Pricing to Stockist (Optional)">PTS</strong>
             </div>
-            <div className="bg-white p-1.5 rounded border border-slate-200">
-              <span className="text-slate-400 block text-[9px] font-sans">COL 7</span>
-              <strong className="text-slate-900">Purchase Price</strong>
+            <div className="bg-white p-1.5 rounded border border-teal-200 bg-teal-50/40">
+              <span className="text-teal-600 block text-[9px] font-sans font-bold">COL 7</span>
+              <strong className="text-teal-900 truncate block" title="Pricing to Retailer (Optional)">PTR</strong>
             </div>
-            <div className="bg-white p-1.5 rounded border border-slate-200">
-              <span className="text-slate-400 block text-[9px] font-sans">COL 8</span>
-              <strong className="text-slate-900">GST</strong>
+            <div className="bg-white p-1.5 rounded border border-blue-200 bg-blue-50/30">
+              <span className="text-blue-500 block text-[9px] font-sans font-bold">COL 8</span>
+              <strong className="text-blue-900 truncate block" title="Selling Price (Optional)">Selling Rate</strong>
             </div>
             <div className="bg-white p-1.5 rounded border border-slate-200">
               <span className="text-slate-400 block text-[9px] font-sans">COL 9</span>
-              <strong className="text-slate-900">Company</strong>
+              <strong className="text-slate-900 truncate block">Purchase Price</strong>
+            </div>
+            <div className="bg-white p-1.5 rounded border border-slate-200">
+              <span className="text-slate-400 block text-[9px] font-sans">COL 10</span>
+              <strong className="text-slate-900 truncate block">GST</strong>
+            </div>
+            <div className="bg-white p-1.5 rounded border border-slate-200">
+              <span className="text-slate-400 block text-[9px] font-sans">COL 11</span>
+              <strong className="text-slate-900 truncate block">Company</strong>
             </div>
             <div className="bg-white p-1.5 rounded border border-blue-200 bg-blue-50/50">
-              <span className="text-blue-500 block text-[9px] font-sans font-bold">COL 10</span>
-              <strong className="text-blue-900">Category</strong>
+              <span className="text-blue-500 block text-[9px] font-sans font-bold">COL 12</span>
+              <strong className="text-blue-900 truncate block" title="Category / Speciality (Optional)">Category</strong>
             </div>
           </div>
+          <p className="text-[11px] text-slate-500 italic pt-0.5">
+            * Note: If any cell for <strong>Pricing to Stockist</strong>, <strong>Pricing to Retailer</strong>, <strong>Selling Price</strong>, or <strong>Category</strong> is kept blank in your spreadsheet, it will remain strictly blank in the catalog output.
+          </p>
         </div>
 
         {/* Upload Drop Zone */}
@@ -349,25 +387,45 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ isOpen, onCl
                           ₹{row.mrp.toFixed(2)}
                         </td>
                         <td className="py-2 px-3 text-right font-semibold tabular-nums text-indigo-700 bg-indigo-50/30">
-                          ₹{(row.pricingToStockist || (row.sellingRate ? Math.round(row.sellingRate * 0.88 * 100) / 100 : 0)).toFixed(2)}
+                          {row.pricingToStockist !== undefined && row.pricingToStockist !== null ? (
+                            `₹${Number(row.pricingToStockist).toFixed(2)}`
+                          ) : (
+                            <span className="text-slate-300 font-normal select-none">—</span>
+                          )}
                         </td>
                         <td className="py-2 px-3 text-right font-semibold tabular-nums text-indigo-700 bg-indigo-50/30">
-                          ₹{(row.pricingToRetailer || (row.sellingRate ? Math.round(row.sellingRate * 0.94 * 100) / 100 : 0)).toFixed(2)}
+                          {row.pricingToRetailer !== undefined && row.pricingToRetailer !== null ? (
+                            `₹${Number(row.pricingToRetailer).toFixed(2)}`
+                          ) : (
+                            <span className="text-slate-300 font-normal select-none">—</span>
+                          )}
                         </td>
                         <td className="py-2 px-3 text-right font-bold tabular-nums text-blue-700">
-                          ₹{row.sellingRate.toFixed(2)}
+                          {row.sellingRate !== undefined && row.sellingRate !== null ? (
+                            `₹${Number(row.sellingRate).toFixed(2)}`
+                          ) : (
+                            <span className="text-slate-300 font-normal select-none">—</span>
+                          )}
                         </td>
                         <td className="py-2 px-3 text-right text-slate-500 tabular-nums">
-                          ₹{row.purchasePrice.toFixed(2)}
+                          {row.purchasePrice !== undefined && row.purchasePrice !== null ? (
+                            `₹${Number(row.purchasePrice).toFixed(2)}`
+                          ) : (
+                            <span className="text-slate-300 font-normal select-none">—</span>
+                          )}
                         </td>
-                        <td className="py-2 px-3 text-center font-medium text-slate-700">{row.gst}</td>
+                        <td className="py-2 px-3 text-center font-medium text-slate-700">{formatGst(row.gst)}</td>
                         <td className="py-2 px-3 font-medium text-slate-900 whitespace-nowrap">
                           {row.company || 'DDB DRUG CHEM'}
                         </td>
                         <td className="py-2 px-3 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                            {row.category || 'General'}
-                          </span>
+                          {row.category && row.category.trim() ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                              {row.category}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 font-normal select-none px-1">—</span>
+                          )}
                         </td>
                       </tr>
                     ))}

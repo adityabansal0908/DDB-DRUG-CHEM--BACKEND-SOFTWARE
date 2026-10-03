@@ -9,7 +9,9 @@ import {
   Trash,
   DownloadSimple,
   X,
-  Sparkle
+  Sparkle,
+  PencilSimpleLine,
+  Package
 } from '@phosphor-icons/react';
 
 interface BulkActionBarProps {
@@ -18,6 +20,8 @@ interface BulkActionBarProps {
   onSelectAllFiltered: () => void;
   onClearSelection: () => void;
   onBulkSetVisibility: (hidden: boolean) => void;
+  onOpenBatchEditModal: () => void;
+  onOpenInventoryAdjusterModal?: () => void;
   onOpenCategoryModal: () => void;
   onOpenCompanyModal: () => void;
   onOpenGstModal: () => void;
@@ -31,6 +35,8 @@ export const BulkActionBar: React.FC<BulkActionBarProps> = ({
   onSelectAllFiltered,
   onClearSelection,
   onBulkSetVisibility,
+  onOpenBatchEditModal,
+  onOpenInventoryAdjusterModal,
   onOpenCategoryModal,
   onOpenCompanyModal,
   onOpenGstModal,
@@ -81,6 +87,36 @@ export const BulkActionBar: React.FC<BulkActionBarProps> = ({
 
       {/* Action Buttons */}
       <div className="flex flex-wrap items-center gap-2">
+        {/* Dedicated Action: Bulk Inventory Adjuster */}
+        {onOpenInventoryAdjusterModal && (
+          <button
+            type="button"
+            id="bulk-btn-inventory-adjuster"
+            data-testid="bulk-btn-inventory-adjuster"
+            onClick={onOpenInventoryAdjusterModal}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+            title="Modify stock levels for multiple selected products simultaneously by percentage or units"
+          >
+            <Package size={15} weight="fill" />
+            <span>Bulk Inventory Adjuster</span>
+          </button>
+        )}
+
+        {/* Primary Action: Batch Edit Pricing & Stock */}
+        <button
+          type="button"
+          id="bulk-btn-batch-edit"
+          data-testid="bulk-btn-batch-edit"
+          onClick={onOpenBatchEditModal}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+          title="Simultaneously edit pricing, rates, margins, or warehouse stock for all selected products"
+        >
+          <PencilSimpleLine size={15} weight="bold" />
+          <span>Batch Edit Pricing &amp; Stock</span>
+        </button>
+
+        <div className="h-5 w-px bg-slate-700 mx-1 hidden sm:block" />
+
         {/* Bulk Visibility: Show to Reps */}
         <button
           type="button"
@@ -107,19 +143,17 @@ export const BulkActionBar: React.FC<BulkActionBarProps> = ({
           <span>Hide from Reps</span>
         </button>
 
-        <div className="h-5 w-px bg-slate-700 mx-1 hidden sm:block" />
-
         {/* Bulk Update Category */}
         <button
           type="button"
           id="bulk-btn-update-category"
           data-testid="bulk-btn-update-category"
           onClick={onOpenCategoryModal}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-semibold shadow-xs transition-colors"
           title="Assign a new specialty or clinical category to all selected products"
         >
           <Tag size={15} weight="bold" />
-          <span>Update Category</span>
+          <span>Category</span>
         </button>
 
         {/* Bulk Update Company */}

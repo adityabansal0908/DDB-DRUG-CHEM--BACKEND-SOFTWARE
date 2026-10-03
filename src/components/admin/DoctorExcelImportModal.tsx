@@ -87,7 +87,10 @@ export const DoctorExcelImportModal: React.FC<DoctorExcelImportModalProps> = ({ 
       bestTimeToVisit: d.bestTimeToVisit || '10:30 AM - 01:00 PM',
       visitingDays: d.visitingDays || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
       visitingSlots: d.visitingSlots || [],
-      targetVisitsPerMonth: Number(d.targetVisitsPerMonth) || 4,
+      targetVisitsPerMonth: Number(d.targetVisitsPerMonth) || Number(d.targetVisits) || 4,
+      targetVisits: Number(d.targetVisits) || Number(d.targetVisitsPerMonth) || 4,
+      visitFrequencyValue: Number(d.visitFrequencyValue) || 1,
+      visitFrequencyUnit: (d.visitFrequencyUnit as 'days' | 'weeks' | 'months') || 'months',
       avatarUrl: `https://images.unsplash.com/photo-1622253692010-333f2da6031d?crop=entropy&cs=srgb&fm=jpg&w=150`,
       dateOfBirth: d.dateOfBirth || '',
       targetedProducts: d.targetedProducts || [],
@@ -262,6 +265,7 @@ export const DoctorExcelImportModal: React.FC<DoctorExcelImportModalProps> = ({ 
                       <th className="py-2.5 px-3">Chamber & City</th>
                       <th className="py-2.5 px-3">Area & Contact</th>
                       <th className="py-2.5 px-3">Visiting Days & Slots</th>
+                      <th className="py-2.5 px-3 text-center">Visits & Time Frame</th>
                       <th className="py-2.5 px-3">Birth Date</th>
                       <th className="py-2.5 px-3">Marketed Products</th>
                       <th className="py-2.5 px-3">Admin Remarks</th>
@@ -308,6 +312,15 @@ export const DoctorExcelImportModal: React.FC<DoctorExcelImportModalProps> = ({ 
                               )}
                             </div>
                           </div>
+                        </td>
+                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1 font-bold text-slate-800 bg-blue-50 border border-blue-200/80 px-2 py-0.5 rounded text-[11px]">
+                            {d.targetVisits || d.targetVisitsPerMonth || 4} visits
+                          </span>
+                          <span className="block text-[10px] text-slate-500 font-medium mt-0.5">
+                            per {d.visitFrequencyValue && d.visitFrequencyValue > 1 ? `${d.visitFrequencyValue} ` : ''}
+                            {d.visitFrequencyUnit || 'months'}
+                          </span>
                         </td>
                         <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
                           {d.dateOfBirth ? (

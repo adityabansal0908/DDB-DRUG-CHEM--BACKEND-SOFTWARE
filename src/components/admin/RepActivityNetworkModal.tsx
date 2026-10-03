@@ -97,12 +97,13 @@ export const RepActivityNetworkModal: React.FC<RepActivityNetworkModalProps> = (
     // 1. From Doctors targetedProducts
     repDoctors.forEach(doc => {
       (doc.targetedProducts || []).forEach(prodName => {
-        const found = products.find(p => p.name.toLowerCase() === prodName.toLowerCase());
+        if (!prodName) return;
+        const found = products.find(p => p?.name && p.name.toLowerCase() === prodName.toLowerCase());
         const entry = productMap.get(prodName) || {
           product: found || null,
           productName: prodName,
           genericName: found?.genericName,
-          category: found?.category || 'General Formulations',
+          category: found?.category?.trim() || undefined,
           doctorsShowcasedTo: [],
           countersStocking: [],
           totalUnits: 0,
@@ -118,12 +119,13 @@ export const RepActivityNetworkModal: React.FC<RepActivityNetworkModalProps> = (
     // 2. From Retail Counters productsSold
     repCounters.forEach(counter => {
       (counter.productsSold || []).forEach(sold => {
-        const found = products.find(p => p.name.toLowerCase() === sold.productName.toLowerCase());
+        if (!sold?.productName) return;
+        const found = products.find(p => p?.name && p.name.toLowerCase() === sold.productName.toLowerCase());
         const entry = productMap.get(sold.productName) || {
           product: found || null,
           productName: sold.productName,
           genericName: sold.genericName || found?.genericName,
-          category: found?.category || 'General Formulations',
+          category: found?.category?.trim() || undefined,
           doctorsShowcasedTo: [],
           countersStocking: [],
           totalUnits: 0,
@@ -159,7 +161,8 @@ export const RepActivityNetworkModal: React.FC<RepActivityNetworkModalProps> = (
       const matchCategory =
         selectedCategory === 'all' ||
         (doc.targetedProducts || []).some(tp => {
-          const prod = products.find(p => p.name.toLowerCase() === tp.toLowerCase());
+          if (!tp) return false;
+          const prod = products.find(p => p?.name && p.name.toLowerCase() === tp.toLowerCase());
           return prod?.category === selectedCategory;
         });
 
@@ -178,12 +181,13 @@ export const RepActivityNetworkModal: React.FC<RepActivityNetworkModalProps> = (
         counter.address.toLowerCase().includes(q) ||
         counter.area.toLowerCase().includes(q) ||
         counter.drugLicenseNo.toLowerCase().includes(q) ||
-        (counter.productsSold || []).some(p => p.productName.toLowerCase().includes(q));
+        (counter.productsSold || []).some(p => p.productName && p.productName.toLowerCase().includes(q));
 
       const matchCategory =
         selectedCategory === 'all' ||
         (counter.productsSold || []).some(ps => {
-          const prod = products.find(p => p.name.toLowerCase() === ps.productName.toLowerCase());
+          if (!ps?.productName) return false;
+          const prod = products.find(p => p?.name && p.name.toLowerCase() === ps.productName.toLowerCase());
           return prod?.category === selectedCategory;
         });
 
@@ -641,7 +645,7 @@ export const RepActivityNetworkModal: React.FC<RepActivityNetworkModalProps> = (
                           ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                               {targetedList.map((prodName, idx) => {
-                                const prod = products.find(p => p.name.toLowerCase() === prodName.toLowerCase());
+                                const prod = products.find(p => p?.name && p.name.toLowerCase() === (prodName || '').toLowerCase());
                                 return (
                                   <div
                                     key={idx}
@@ -1169,7 +1173,7 @@ export const RepActivityNetworkModal: React.FC<RepActivityNetworkModalProps> = (
                           className="rounded-sm border-slate-300 text-emerald-600 focus:ring-emerald-500"
                         />
                         <span className="font-bold">{p.name}</span>
-                        <span className="text-slate-500 text-[11px]">({p.category || 'General'})</span>
+                        {p.category && <span className="text-slate-500 text-[11px]">({p.category})</span>}
                       </label>
                     ))}
                   </div>

@@ -21,11 +21,20 @@ export interface AuditLog {
   userName: string;
   userRole: UserRole;
   actionType: 'CREATE' | 'UPDATE' | 'DELETE' | 'IMPORT' | 'UNDO' | 'CLEAR' | 'LOGIN' | 'LOGOUT';
-  module: 'Product Catalog' | 'Doctors' | 'Authentication' | 'Field Visits' | 'Orders';
+  module: 'Product Catalog' | 'Doctors' | 'Authentication' | 'Field Visits' | 'Orders' | 'Field Telemetry';
   targetItemName: string;
   details: string; // Plain summary of what was changed
   previousStateSnippet?: string; // Optional diff context
   newStateSnippet?: string;
+  changeCategory?: 'stock' | 'pricing' | 'formulation' | 'general';
+  fieldDiffs?: {
+    field: string;
+    label: string;
+    oldValue: any;
+    newValue: any;
+    diff?: number;
+  }[];
+  reason?: string;
 }
 
 export interface ProductBatch {
@@ -44,11 +53,12 @@ export interface Product {
   mrp: number; // Column 5: MRP
   pricingToStockist?: number; // Column 6: Pricing to Stockist (PTS)
   pricingToRetailer?: number; // Column 7: Pricing to Retailer (PTR)
-  sellingRate: number; // Column 8: Selling Price
-  purchasePrice: number; // Column 9: Purchase Price
-  gst: number | string; // Column 10: GST
+  sellingRate?: number; // Column 8: Selling Price
+  purchasePrice?: number; // Column 9: Purchase Price
+  gst?: number | string; // Column 10: GST
   company?: string; // Column 11: Company (Manufacturing Company Name)
   category?: string; // Column 12: Category / Speciality (Open field, e.g. Antibiotics, Cardiology, Orthopedics)
+  clinicalSpeciality?: string; // Column 13: Clinical Speciality / Division (e.g. Paediatric, Gynaecology, Dermatology)
   hiddenFromRep?: boolean; // Flag to hide formulation from Sales Rep view
   stockUnits?: number; // Optional stock
   batchNo?: string; // Optional batch
@@ -56,7 +66,12 @@ export interface Product {
   batches?: ProductBatch[];
   strength?: string;
   minOrderQty?: number;
-  status?: 'active' | 'low_stock' | 'out_of_stock';
+  reorderLevel?: number; // Predefined threshold for re-order warning (e.g. 500, 800 units)
+  isHighDemand?: boolean; // Flag identifying specific high-demand formulations requiring automated re-order alerting
+  imageUrl?: string; // Product formulation packaging / tablet strip photo URL
+  photos?: string[]; // Attached product photo gallery
+  status?: 'active' | 'low_stock' | 'out_of_stock' | 'merged';
+  mergedIntoId?: string;
   indication?: string;
 }
 
@@ -72,7 +87,8 @@ export type ProductCatalogColumnKey =
   | 'purchasePrice'
   | 'gst'
   | 'company'
-  | 'category';
+  | 'category'
+  | 'clinicalSpeciality';
 
 export interface CatalogColumnMeta {
   key: ProductCatalogColumnKey;
@@ -179,6 +195,14 @@ export const CATALOG_COLUMNS: CatalogColumnMeta[] = [
     orderNumber: 12,
     description: 'Therapeutic clinical speciality (e.g. Cardiology, Antibiotics)',
     group: 'tax_org'
+  },
+  {
+    key: 'clinicalSpeciality',
+    label: 'Clinical Speciality / Division',
+    shortLabel: 'Speciality',
+    orderNumber: 13,
+    description: 'Target medical practice division (e.g. Paediatric, Gynaecology, Orthopaedic)',
+    group: 'tax_org'
   }
 ];
 
@@ -202,7 +226,10 @@ export interface Doctor {
   bestTimeToVisit: string; // Composite summary string, e.g. "Mon-Sat: 10:00 AM - 01:00 PM, 06:00 PM - 08:30 PM"
   visitingDays?: string[]; // e.g. ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   visitingSlots?: DoctorVisitingSlot[]; // Multiple visiting time slots
-  targetVisitsPerMonth: number;
+  targetVisitsPerMonth: number; // Retained for backwards compatibility / monthly quota
+  targetVisits?: number; // Number of visits configured by admin (e.g. 2, 4)
+  visitFrequencyValue?: number; // Number of units in time frame (e.g. 15, 2, 1)
+  visitFrequencyUnit?: 'days' | 'weeks' | 'months'; // Time frame unit: 'days' | 'weeks' | 'months'
   visitsCompletedThisMonth: number;
   avatarUrl: string;
   dateOfBirth?: string; // 2. Doctor's birth date (YYYY-MM-DD or formatted)
@@ -215,12 +242,18 @@ export interface Doctor {
   scheduledTime?: string;
   status?: 'completed' | 'pending' | 'in_progress';
   assignedRepIds?: string[];
+  attachedPharmacyId?: string;
+  attachedPharmacyName?: string;
+  attachedPharmacyType?: string;
+  attachedHospitalName?: string;
+  attachedClinicName?: string;
 }
 
 export type AdminTabKey =
   | 'dashboard'
   | 'monitoring'
   | 'doctors'
+  | 'medical_stores'
   | 'products'
   | 'reps'
   | 'orders'
@@ -287,7 +320,7 @@ export interface SalesRep {
 export interface RetailCounter {
   id: string;
   name: string;
-  type: 'retail_chemist' | 'hospital_pharmacy' | 'clinic_counter' | 'chain_pharmacy';
+  type: 'retail_chemist' | 'wholesale_chemist' | 'hospital_pharmacy' | 'clinic_counter' | 'chain_pharmacy';
   contactPerson: string;
   phone: string;
   address: string;
@@ -298,6 +331,10 @@ export interface RetailCounter {
   assignedRepName: string;
   drugLicenseNo: string;
   gstin: string;
+  hospitalName?: string; // Populated when type is 'hospital_pharmacy'
+  clinicName?: string; // Populated when type is 'clinic_counter'
+  linkedDoctorIds?: string[]; // IDs of doctor(s) linked to this hospital/clinic pharmacy
+  linkedDoctorNames?: string[]; // Names of doctor(s) linked to this hospital/clinic pharmacy
   productsSold: {
     productId?: string;
     productName: string;
@@ -309,6 +346,14 @@ export interface RetailCounter {
   }[];
   totalMonthlyRevenue: number;
   creditDays: number;
+  creditLimit?: number;
+  isDirectSaleEligible?: boolean; // Direct selling allowed without doctor involvement
+  preferredPaymentTerms?: string;
+  directDiscountPct?: number; // Direct discount / trade margin %
+  email?: string;
+  pincode?: string;
+  notes?: string;
+  directOrdersCount?: number;
   status: 'active' | 'pending_refill' | 'high_volume';
 }
 
@@ -321,13 +366,14 @@ export interface OrderOrSampleRequest {
   date: string;
   isoDate?: string;
   items: {
+    productId?: string;
     productName: string;
     qty: number;
     price: number;
   }[];
   totalAmount: number;
   type: 'Order' | 'Sample';
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'dispatched' | 'rejected';
 }
 
 export type NotificationType =
@@ -339,7 +385,9 @@ export type NotificationType =
   | 'rep_account_activity'
   | 'location_update'
   | 'target_update'
-  | 'sample_requested';
+  | 'sample_requested'
+  | 'reorder_level_reached' // Automated notification when high-demand product reaches re-order level
+  | 'out_of_stock'; // Critical warning when stock is completely depleted (0 units)
 
 export interface AdminNotification {
   id: string;
@@ -359,6 +407,11 @@ export interface AdminNotification {
     orderId?: string;
     doctorId?: string;
     doctorName?: string;
+    productId?: string;
+    productName?: string;
+    currentStock?: number;
+    reorderLevel?: number;
+    isHighDemand?: boolean;
     amount?: number;
     territory?: string;
     purpose?: string;

@@ -33,7 +33,11 @@ import {
   Check,
   Tag,
   Info,
-  CaretLeft
+  CaretLeft,
+  Target,
+  ArrowCounterClockwise,
+  Storefront,
+  ArrowSquareOut
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
@@ -41,12 +45,14 @@ export const DoctorManagement: React.FC = () => {
   const {
     doctors,
     products,
+    retailCounters,
     addDoctor,
     updateDoctor,
     deleteDoctor,
     setSelectedDoctorForCheckin,
     setRole,
     setActiveRepTab,
+    setActiveAdminTab,
     canGoBack,
     goBack,
     previousScreenName
@@ -55,10 +61,19 @@ export const DoctorManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSpecialty, setSelectedSpecialty] = useState('All');
   const [selectedCity, setSelectedCity] = useState('All');
+  const [pharmacyFilter, setPharmacyFilter] = useState<'all' | 'with_pharmacy' | 'hospital_pharmacy' | 'clinic_counter'>('all');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingDoctorId, setEditingDoctorId] = useState<string | null>(null);
   const [isExcelImportModalOpen, setIsExcelImportModalOpen] = useState(false);
+
+  // Quick Visit Quota & Time Frame Edit Modal state
+  const [quickQuotaDoctor, setQuickQuotaDoctor] = useState<Doctor | null>(null);
+  const [quickQuotaForm, setQuickQuotaForm] = useState({
+    targetVisits: 4,
+    visitFrequencyValue: 1,
+    visitFrequencyUnit: 'months' as 'days' | 'weeks' | 'months'
+  });
 
   // Multi-product dropdown state in modals
   const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
@@ -92,6 +107,9 @@ export const DoctorManagement: React.FC = () => {
       }
     ] as DoctorVisitingSlot[],
     bestTimeToVisit: 'Mon - Sat • Morning Chamber (10:00 AM - 01:00 PM); Evening Clinic (06:00 PM - 08:30 PM)',
+    targetVisits: 4,
+    visitFrequencyValue: 1,
+    visitFrequencyUnit: 'months' as 'days' | 'weeks' | 'months',
     targetVisitsPerMonth: 4,
     dateOfBirth: '',
     targetedProducts: [] as string[],
@@ -151,6 +169,37 @@ export const DoctorManagement: React.FC = () => {
         bestTimeToVisit: formatVisitingSummary(prev.visitingDays, updatedSlots)
       };
     });
+  };
+
+  // Helper methods to split and update time value and AM/PM meridiem
+  const parseTimeParts = (timeStr: string, fallbackMeridiem: 'AM' | 'PM' = 'AM') => {
+    const raw = (timeStr || '').trim();
+    if (!raw) return { time: '', meridiem: fallbackMeridiem };
+    const match = raw.match(/^(.*?)(?:\s*(AM|PM))?$/i);
+    let time = raw;
+    let meridiem = fallbackMeridiem;
+    if (match) {
+      time = (match[1] || '').trim();
+      if (match[2]) {
+        meridiem = match[2].toUpperCase() as 'AM' | 'PM';
+      }
+    }
+    return { time, meridiem };
+  };
+
+  const handleUpdateTimeValue = (slotIndex: number, field: 'startTime' | 'endTime', newTime: string) => {
+    const currentVal = doctorForm.visitingSlots[slotIndex]?.[field] || '';
+    const { meridiem } = parseTimeParts(currentVal, field === 'startTime' ? 'AM' : 'PM');
+    const combined = newTime.trim() ? `${newTime.trim()} ${meridiem}` : '';
+    handleUpdateVisitingSlot(slotIndex, field, combined);
+  };
+
+  const handleUpdateMeridiem = (slotIndex: number, field: 'startTime' | 'endTime', newMeridiem: 'AM' | 'PM') => {
+    const currentVal = doctorForm.visitingSlots[slotIndex]?.[field] || '';
+    const { time } = parseTimeParts(currentVal, field === 'startTime' ? 'AM' : 'PM');
+    const cleanTime = time.trim() || (field === 'startTime' ? '10:00' : '01:00');
+    const combined = `${cleanTime} ${newMeridiem}`;
+    handleUpdateVisitingSlot(slotIndex, field, combined);
   };
 
   const toggleVisitingDay = (day: string) => {
@@ -236,6 +285,23 @@ export const DoctorManagement: React.FC = () => {
       (doc.city && doc.city.toLowerCase() === selectedCity.toLowerCase());
 
     const query = searchTerm.toLowerCase().trim();
+
+    // Check linked store from retailCounters or direct doctor fields
+    const linkedStore = retailCounters.find(
+      (s) =>
+        s.id === doc.attachedPharmacyId ||
+        (s.linkedDoctorIds && s.linkedDoctorIds.includes(doc.id)) ||
+        (s.linkedDoctorNames && s.linkedDoctorNames.includes(doc.name))
+    );
+    const pharmacyName = doc.attachedPharmacyName || linkedStore?.name;
+    const pharmacyType = doc.attachedPharmacyType || linkedStore?.type;
+
+    const matchesPharmacy =
+      pharmacyFilter === 'all' ||
+      (pharmacyFilter === 'with_pharmacy' && Boolean(pharmacyName)) ||
+      (pharmacyFilter === 'hospital_pharmacy' && pharmacyType === 'hospital_pharmacy') ||
+      (pharmacyFilter === 'clinic_counter' && pharmacyType === 'clinic_counter');
+
     const matchesSearch =
       query === '' ||
       doc.name.toLowerCase().includes(query) ||
@@ -243,10 +309,15 @@ export const DoctorManagement: React.FC = () => {
       (doc.city && doc.city.toLowerCase().includes(query)) ||
       doc.area.toLowerCase().includes(query) ||
       doc.specialty.toLowerCase().includes(query) ||
+      (pharmacyName && pharmacyName.toLowerCase().includes(query)) ||
+      (doc.attachedHospitalName && doc.attachedHospitalName.toLowerCase().includes(query)) ||
+      (doc.attachedClinicName && doc.attachedClinicName.toLowerCase().includes(query)) ||
+      (linkedStore?.hospitalName && linkedStore.hospitalName.toLowerCase().includes(query)) ||
+      (linkedStore?.clinicName && linkedStore.clinicName.toLowerCase().includes(query)) ||
       (doc.targetedProducts && doc.targetedProducts.some((p) => p.toLowerCase().includes(query))) ||
       (doc.adminRemarks && doc.adminRemarks.toLowerCase().includes(query));
 
-    return matchesSpecialty && matchesCity && matchesSearch;
+    return matchesSpecialty && matchesCity && matchesPharmacy && matchesSearch;
   });
 
   const handleOpenAddModal = () => {
@@ -278,7 +349,10 @@ export const DoctorManagement: React.FC = () => {
       visitingDays,
       visitingSlots,
       bestTimeToVisit: formatVisitingSummary(visitingDays, visitingSlots),
-      targetVisitsPerMonth: doc.targetVisitsPerMonth || 4,
+      targetVisits: doc.targetVisits ?? doc.targetVisitsPerMonth ?? 4,
+      visitFrequencyValue: doc.visitFrequencyValue ?? 1,
+      visitFrequencyUnit: doc.visitFrequencyUnit ?? 'months',
+      targetVisitsPerMonth: doc.targetVisitsPerMonth || doc.targetVisits || 4,
       dateOfBirth: doc.dateOfBirth || '',
       targetedProducts: doc.targetedProducts || [],
       adminRemarks: doc.adminRemarks || '',
@@ -317,6 +391,19 @@ export const DoctorManagement: React.FC = () => {
     const doctorName = doctorForm.name.startsWith('Dr.') ? doctorForm.name : `Dr. ${doctorForm.name}`;
     const compositeSchedule = formatVisitingSummary(doctorForm.visitingDays, doctorForm.visitingSlots);
 
+    const visits = Number(doctorForm.targetVisits) || 4;
+    const freqValue = Number(doctorForm.visitFrequencyValue) || 1;
+    const freqUnit = doctorForm.visitFrequencyUnit || 'months';
+
+    let monthlyEquiv = visits;
+    if (freqUnit === 'days') {
+      monthlyEquiv = Math.max(1, Math.round((visits / Math.max(1, freqValue)) * 30));
+    } else if (freqUnit === 'weeks') {
+      monthlyEquiv = Math.max(1, Math.round((visits / Math.max(1, freqValue)) * 4.33));
+    } else {
+      monthlyEquiv = Math.max(1, Math.round(visits / Math.max(1, freqValue)));
+    }
+
     addDoctor({
       name: doctorName,
       specialty: doctorForm.specialty,
@@ -328,7 +415,10 @@ export const DoctorManagement: React.FC = () => {
       bestTimeToVisit: compositeSchedule,
       visitingDays: doctorForm.visitingDays,
       visitingSlots: doctorForm.visitingSlots,
-      targetVisitsPerMonth: Number(doctorForm.targetVisitsPerMonth) || 4,
+      targetVisits: visits,
+      visitFrequencyValue: freqValue,
+      visitFrequencyUnit: freqUnit,
+      targetVisitsPerMonth: monthlyEquiv,
       avatarUrl: `https://images.unsplash.com/photo-${1622253692010 + Math.floor(Math.random() * 50)}?crop=entropy&cs=srgb&fm=jpg&w=150`,
       dateOfBirth: doctorForm.dateOfBirth,
       targetedProducts: doctorForm.targetedProducts,
@@ -351,6 +441,19 @@ export const DoctorManagement: React.FC = () => {
     const doctorName = doctorForm.name.startsWith('Dr.') ? doctorForm.name : `Dr. ${doctorForm.name}`;
     const compositeSchedule = formatVisitingSummary(doctorForm.visitingDays, doctorForm.visitingSlots);
 
+    const visits = Number(doctorForm.targetVisits) || 4;
+    const freqValue = Number(doctorForm.visitFrequencyValue) || 1;
+    const freqUnit = doctorForm.visitFrequencyUnit || 'months';
+
+    let monthlyEquiv = visits;
+    if (freqUnit === 'days') {
+      monthlyEquiv = Math.max(1, Math.round((visits / Math.max(1, freqValue)) * 30));
+    } else if (freqUnit === 'weeks') {
+      monthlyEquiv = Math.max(1, Math.round((visits / Math.max(1, freqValue)) * 4.33));
+    } else {
+      monthlyEquiv = Math.max(1, Math.round(visits / Math.max(1, freqValue)));
+    }
+
     updateDoctor(editingDoctorId, {
       name: doctorName,
       specialty: doctorForm.specialty,
@@ -362,7 +465,10 @@ export const DoctorManagement: React.FC = () => {
       bestTimeToVisit: compositeSchedule,
       visitingDays: doctorForm.visitingDays,
       visitingSlots: doctorForm.visitingSlots,
-      targetVisitsPerMonth: Number(doctorForm.targetVisitsPerMonth) || 4,
+      targetVisits: visits,
+      visitFrequencyValue: freqValue,
+      visitFrequencyUnit: freqUnit,
+      targetVisitsPerMonth: monthlyEquiv,
       dateOfBirth: doctorForm.dateOfBirth,
       targetedProducts: doctorForm.targetedProducts,
       adminRemarks: doctorForm.adminRemarks,
@@ -382,13 +488,78 @@ export const DoctorManagement: React.FC = () => {
     setActiveRepTab('checkin');
   };
 
+  // Format doctor visit quota & timeframe helper
+  const getDoctorVisitSummary = (doc: Doctor) => {
+    const visits = doc.targetVisits ?? doc.targetVisitsPerMonth ?? 4;
+    const value = doc.visitFrequencyValue ?? 1;
+    const unit = doc.visitFrequencyUnit ?? 'months';
+
+    let timeframeStr = '';
+    if (unit === 'days') {
+      timeframeStr = value === 1 ? 'day' : `${value} days`;
+    } else if (unit === 'weeks') {
+      timeframeStr = value === 1 ? 'week' : `${value} weeks`;
+    } else {
+      timeframeStr = value === 1 ? 'month' : `${value} months`;
+    }
+
+    return {
+      visits,
+      timeframeStr,
+      label: `${visits} visit${visits > 1 ? 's' : ''} / ${timeframeStr}`
+    };
+  };
+
+  const handleOpenQuickQuota = (doc: Doctor) => {
+    const visits = doc.targetVisits ?? doc.targetVisitsPerMonth ?? 4;
+    const value = doc.visitFrequencyValue ?? 1;
+    const unit = doc.visitFrequencyUnit ?? 'months';
+
+    setQuickQuotaDoctor(doc);
+    setQuickQuotaForm({
+      targetVisits: visits,
+      visitFrequencyValue: value,
+      visitFrequencyUnit: unit
+    });
+  };
+
+  const handleSaveQuickQuota = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickQuotaDoctor) return;
+
+    const visits = Number(quickQuotaForm.targetVisits) || 1;
+    const freqValue = Number(quickQuotaForm.visitFrequencyValue) || 1;
+    const freqUnit = quickQuotaForm.visitFrequencyUnit;
+
+    // Approximate monthly quota for progress calculations
+    let monthlyEquiv = visits;
+    if (freqUnit === 'days') {
+      monthlyEquiv = Math.max(1, Math.round((visits / Math.max(1, freqValue)) * 30));
+    } else if (freqUnit === 'weeks') {
+      monthlyEquiv = Math.max(1, Math.round((visits / Math.max(1, freqValue)) * 4.33));
+    } else {
+      monthlyEquiv = Math.max(1, Math.round(visits / Math.max(1, freqValue)));
+    }
+
+    updateDoctor(quickQuotaDoctor.id, {
+      targetVisits: visits,
+      visitFrequencyValue: freqValue,
+      visitFrequencyUnit: freqUnit,
+      targetVisitsPerMonth: monthlyEquiv
+    });
+
+    toast.success(`Visit target updated for ${quickQuotaDoctor.name}`);
+    setQuickQuotaDoctor(null);
+  };
+
   // Filtered product catalogue for multi-select dropdown
-  const filteredProductsForDropdown = products.filter((p) => {
+  const filteredProductsForDropdown = (products || []).filter((p) => {
+    if (!p) return false;
     if (!productSearchQuery) return true;
     const q = productSearchQuery.toLowerCase();
     return (
-      p.name.toLowerCase().includes(q) ||
-      p.genericName.toLowerCase().includes(q) ||
+      (p.name && p.name.toLowerCase().includes(q)) ||
+      (p.genericName && p.genericName.toLowerCase().includes(q)) ||
       (p.category && p.category.toLowerCase().includes(q))
     );
   });
@@ -547,6 +718,36 @@ export const DoctorManagement: React.FC = () => {
               ))}
             </select>
           </div>
+
+          {/* Pharmacy Linkage Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">Pharmacy:</span>
+            <select
+              data-testid="doctor-pharmacy-filter"
+              value={pharmacyFilter}
+              onChange={(e) => setPharmacyFilter(e.target.value as any)}
+              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            >
+              <option value="all">All Doctors</option>
+              <option value="with_pharmacy">With Attached Pharmacy</option>
+              <option value="hospital_pharmacy">Hospital Pharmacy Only</option>
+              <option value="clinic_counter">Clinic Attached Pharmacy Only</option>
+            </select>
+          </div>
+
+          {(searchTerm || selectedSpecialty !== 'All' || selectedCity !== 'All' || pharmacyFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setSearchTerm('');
+                setSelectedSpecialty('All');
+                setSelectedCity('All');
+                setPharmacyFilter('all');
+              }}
+              className="px-2.5 py-1 text-xs text-rose-600 hover:text-rose-700 font-semibold cursor-pointer"
+            >
+              Reset
+            </button>
+          )}
         </div>
       </div>
 
@@ -595,13 +796,14 @@ export const DoctorManagement: React.FC = () => {
                   <th className="py-3.5 px-4">Visiting Schedule (Days & Slots)</th>
                   <th className="py-3.5 px-4">Marketed Products</th>
                   <th className="py-3.5 px-4">Admin Remarks</th>
-                  <th className="py-3.5 px-4 text-center">Monthly Quota</th>
+                  <th className="py-3.5 px-4 text-center">Visits & Time Frame</th>
                   <th className="py-3.5 px-4 text-center">Status</th>
                   <th className="py-3.5 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredDoctors.map((doc) => {
+                  const quotaSummary = getDoctorVisitSummary(doc);
                   const target = doc.targetVisitsPerMonth || 4;
                   const completed = doc.visitsCompletedThisMonth || 0;
                   const progressPct = Math.min(100, Math.round((completed / target) * 100));
@@ -659,6 +861,70 @@ export const DoctorManagement: React.FC = () => {
                               {doc.address}
                             </span>
                           </div>
+
+                          {/* Linked Medical Store / Attached Pharmacy Linkage */}
+                          {(() => {
+                            const linkedStore = retailCounters.find(
+                              (s) =>
+                                s.id === doc.attachedPharmacyId ||
+                                (s.linkedDoctorIds && s.linkedDoctorIds.includes(doc.id)) ||
+                                (s.linkedDoctorNames && s.linkedDoctorNames.includes(doc.name))
+                            );
+                            const pharmacyName = doc.attachedPharmacyName || linkedStore?.name;
+                            const pharmacyType = doc.attachedPharmacyType || linkedStore?.type;
+                            const hospitalName = doc.attachedHospitalName || linkedStore?.hospitalName;
+                            const clinicName = doc.attachedClinicName || linkedStore?.clinicName;
+
+                            if (!pharmacyName) return null;
+
+                            const isHospital = pharmacyType === 'hospital_pharmacy';
+
+                            return (
+                              <div
+                                className={`mt-2 p-2 rounded-xl border transition-all ${
+                                  isHospital
+                                    ? 'bg-blue-50/90 border-blue-200 text-blue-950'
+                                    : 'bg-teal-50/90 border-teal-200 text-teal-950'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-1 mb-0.5">
+                                  <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md ${
+                                    isHospital ? 'bg-blue-100 text-blue-800' : 'bg-teal-100 text-teal-800'
+                                  }`}>
+                                    {isHospital ? (
+                                      <Buildings size={11} className="text-blue-700" weight="bold" />
+                                    ) : (
+                                      <Storefront size={11} className="text-teal-700" weight="bold" />
+                                    )}
+                                    <span>{isHospital ? 'Hospital Pharmacy' : 'Clinic Pharmacy'}</span>
+                                  </span>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveAdminTab('medical_stores')}
+                                    className="text-[10px] font-bold text-blue-600 hover:text-blue-800 underline inline-flex items-center gap-0.5 cursor-pointer"
+                                    title="View this store in the Medical Stores section"
+                                  >
+                                    <span>View Store</span>
+                                    <ArrowSquareOut size={10} weight="bold" />
+                                  </button>
+                                </div>
+
+                                <div className="font-bold text-xs text-slate-900 leading-snug">
+                                  {pharmacyName}
+                                </div>
+
+                                {(hospitalName || clinicName) && (
+                                  <div className="text-[10px] text-slate-600 mt-0.5 font-medium flex items-center gap-1">
+                                    <span>{isHospital ? '🏥' : '🩺'}</span>
+                                    <span className="truncate">
+                                      {isHospital ? `Hospital: ${hospitalName}` : `Clinic: ${clinicName}`}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </td>
 
@@ -757,13 +1023,32 @@ export const DoctorManagement: React.FC = () => {
                         )}
                       </td>
 
-                      {/* Quota Progress */}
+                      {/* Quota & Timeframe Configuration */}
                       <td className="py-3.5 px-4 text-center">
                         <div className="inline-flex flex-col items-center">
-                          <span className="text-xs font-bold text-slate-800 tabular-nums">
-                            {completed} / {target} visits
-                          </span>
-                          <div className="w-16 bg-slate-100 rounded-full h-1.5 mt-1 overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenQuickQuota(doc)}
+                            className="group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50/80 hover:bg-blue-100/80 border border-blue-200/80 text-blue-900 transition-all cursor-pointer"
+                            title="Click to quickly adjust visit target and timeframe"
+                          >
+                            <Target size={13} className="text-blue-600 group-hover:scale-110 transition-transform" weight="bold" />
+                            <span className="text-xs font-bold font-mono">
+                              {quotaSummary.visits} visit{quotaSummary.visits > 1 ? 's' : ''}
+                            </span>
+                            <span className="text-[11px] font-semibold text-blue-700">
+                              / {quotaSummary.timeframeStr}
+                            </span>
+                            <PencilSimple size={11} className="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity ml-0.5" />
+                          </button>
+                          
+                          <div className="flex items-center gap-1 mt-1.5">
+                            <span className="text-[10px] font-semibold text-slate-500">
+                              Month: {completed} / {target} done
+                            </span>
+                          </div>
+
+                          <div className="w-20 bg-slate-100 rounded-full h-1.5 mt-0.5 overflow-hidden">
                             <div
                               className={`h-full rounded-full ${
                                 progressPct >= 100 ? 'bg-emerald-500' : 'bg-blue-600'
@@ -1118,8 +1403,8 @@ export const DoctorManagement: React.FC = () => {
                         key={slot.id || sIdx}
                         className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center gap-2.5 shadow-2xs"
                       >
-                        {/* Slot label */}
-                        <div className="w-full sm:w-5/12">
+                        {/* Slot label - Main width for chamber name */}
+                        <div className="w-full sm:flex-1 min-w-[180px]">
                           <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                             Slot Name / Chamber
                           </label>
@@ -1132,44 +1417,74 @@ export const DoctorManagement: React.FC = () => {
                           />
                         </div>
 
-                        {/* Start Time */}
-                        <div className="w-full sm:w-3/12">
+                        {/* Start Time - Compact fixed/shrinkable width */}
+                        <div className="w-full sm:w-auto shrink-0">
                           <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                             Start Time
                           </label>
-                          <input
-                            type="text"
-                            placeholder="10:00 AM"
-                            value={slot.startTime}
-                            onChange={(e) => handleUpdateVisitingSlot(sIdx, 'startTime', e.target.value)}
-                            className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
-                          />
+                          {(() => {
+                            const { time, meridiem } = parseTimeParts(slot.startTime, 'AM');
+                            return (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="text"
+                                  placeholder="10:00"
+                                  value={time}
+                                  onChange={(e) => handleUpdateTimeValue(sIdx, 'startTime', e.target.value)}
+                                  className="w-20 sm:w-22 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono text-center"
+                                />
+                                <select
+                                  value={meridiem}
+                                  onChange={(e) => handleUpdateMeridiem(sIdx, 'startTime', e.target.value as 'AM' | 'PM')}
+                                  className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200/80 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shrink-0"
+                                  title="Select AM or PM"
+                                >
+                                  <option value="AM">AM</option>
+                                  <option value="PM">PM</option>
+                                </select>
+                              </div>
+                            );
+                          })()}
                         </div>
 
-                        {/* End Time */}
-                        <div className="w-full sm:w-4/12">
+                        {/* End Time - Compact fixed/shrinkable width */}
+                        <div className="w-full sm:w-auto shrink-0">
                           <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                             End Time
                           </label>
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              type="text"
-                              placeholder="01:00 PM"
-                              value={slot.endTime}
-                              onChange={(e) => handleUpdateVisitingSlot(sIdx, 'endTime', e.target.value)}
-                              className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
-                            />
-                            {doctorForm.visitingSlots.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveVisitingSlot(sIdx)}
-                                title="Remove this visiting slot"
-                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer shrink-0"
-                              >
-                                <Trash size={15} />
-                              </button>
-                            )}
-                          </div>
+                          {(() => {
+                            const { time, meridiem } = parseTimeParts(slot.endTime, 'PM');
+                            return (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="text"
+                                  placeholder="01:00"
+                                  value={time}
+                                  onChange={(e) => handleUpdateTimeValue(sIdx, 'endTime', e.target.value)}
+                                  className="w-20 sm:w-22 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono text-center"
+                                />
+                                <select
+                                  value={meridiem}
+                                  onChange={(e) => handleUpdateMeridiem(sIdx, 'endTime', e.target.value as 'AM' | 'PM')}
+                                  className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200/80 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shrink-0"
+                                  title="Select AM or PM"
+                                >
+                                  <option value="AM">AM</option>
+                                  <option value="PM">PM</option>
+                                </select>
+                                {doctorForm.visitingSlots.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveVisitingSlot(sIdx)}
+                                    title="Remove this visiting slot"
+                                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer shrink-0 ml-1"
+                                  >
+                                    <Trash size={15} />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                     ))}
@@ -1210,26 +1525,120 @@ export const DoctorManagement: React.FC = () => {
                   </span>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
-                    Monthly Target Visits
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center justify-between">
+                    <span>Number of Visits & Time Frame</span>
+                    <span className="text-[10px] text-blue-700 font-semibold bg-blue-50 px-1.5 py-0.5 rounded">
+                      Admin Configurable
+                    </span>
                   </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="30"
-                    value={doctorForm.targetVisitsPerMonth}
-                    onChange={(e) =>
-                      setDoctorForm({
-                        ...doctorForm,
-                        targetVisitsPerMonth: parseInt(e.target.value) || 4
-                      })
-                    }
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="text-[11px] text-slate-400 mt-0.5 block">
-                    Target detailing calls required per calendar month
-                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                    {/* Number of Visits */}
+                    <div className="sm:col-span-4">
+                      <div className="relative">
+                        <input
+                          type="number"
+                          id="doctor-target-visits-input"
+                          data-testid="doctor-target-visits-input"
+                          min="1"
+                          max="100"
+                          value={doctorForm.targetVisits}
+                          onChange={(e) => {
+                            const val = Math.max(1, parseInt(e.target.value) || 1);
+                            setDoctorForm({
+                              ...doctorForm,
+                              targetVisits: val
+                            });
+                          }}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="4"
+                        />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-medium pointer-events-none">
+                          visits
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="sm:col-span-1 flex items-center justify-center text-xs font-bold text-slate-400">
+                      per
+                    </div>
+
+                    {/* Time Frame Count (x) */}
+                    <div className="sm:col-span-3">
+                      <input
+                        type="number"
+                        id="doctor-frequency-value-input"
+                        data-testid="doctor-frequency-value-input"
+                        min="1"
+                        max="365"
+                        value={doctorForm.visitFrequencyValue}
+                        onChange={(e) => {
+                          const val = Math.max(1, parseInt(e.target.value) || 1);
+                          setDoctorForm({
+                            ...doctorForm,
+                            visitFrequencyValue: val
+                          });
+                        }}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="1"
+                      />
+                    </div>
+
+                    {/* Time Frame Unit (days | weeks | months) */}
+                    <div className="sm:col-span-4">
+                      <select
+                        id="doctor-frequency-unit-select"
+                        data-testid="doctor-frequency-unit-select"
+                        value={doctorForm.visitFrequencyUnit}
+                        onChange={(e) =>
+                          setDoctorForm({
+                            ...doctorForm,
+                            visitFrequencyUnit: e.target.value as 'days' | 'weeks' | 'months'
+                          })
+                        }
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="days">Day(s)</option>
+                        <option value="weeks">Week(s)</option>
+                        <option value="months">Month(s)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1">
+                    <span>
+                      Quota: <strong className="text-slate-800">{doctorForm.targetVisits} visit{doctorForm.targetVisits > 1 ? 's' : ''}</strong> every{' '}
+                      <strong className="text-blue-700">
+                        {doctorForm.visitFrequencyValue === 1 ? '' : `${doctorForm.visitFrequencyValue} `}
+                        {doctorForm.visitFrequencyUnit}
+                      </strong>
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      Presets:
+                      <button
+                        type="button"
+                        onClick={() => setDoctorForm({ ...doctorForm, targetVisits: 4, visitFrequencyValue: 1, visitFrequencyUnit: 'months' })}
+                        className="ml-1 text-blue-600 hover:underline"
+                      >
+                        Monthly (4)
+                      </button>
+                      <span className="mx-1">•</span>
+                      <button
+                        type="button"
+                        onClick={() => setDoctorForm({ ...doctorForm, targetVisits: 2, visitFrequencyValue: 2, visitFrequencyUnit: 'weeks' })}
+                        className="text-blue-600 hover:underline"
+                      >
+                        Bi-weekly (2)
+                      </button>
+                      <span className="mx-1">•</span>
+                      <button
+                        type="button"
+                        onClick={() => setDoctorForm({ ...doctorForm, targetVisits: 1, visitFrequencyValue: 15, visitFrequencyUnit: 'days' })}
+                        className="text-blue-600 hover:underline"
+                      >
+                        15 Days (1)
+                      </button>
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -1445,6 +1854,210 @@ export const DoctorManagement: React.FC = () => {
                   className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg shadow-xs transition-colors"
                 >
                   {isEditModalOpen ? 'Save Changes' : 'Save Doctor Profile'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK VISIT QUOTA & TIME FRAME MODAL */}
+      {quickQuotaDoctor && (
+        <div
+          id="quick-quota-modal-overlay"
+          data-testid="quick-quota-modal-overlay"
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4"
+        >
+          <div
+            id="quick-quota-modal-container"
+            data-testid="quick-quota-modal-container"
+            className="bg-white rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200"
+          >
+            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                  <Target size={22} weight="bold" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 font-heading text-base sm:text-lg">
+                    Set Visit Frequency
+                  </h3>
+                  <p className="text-xs text-slate-500 line-clamp-1">
+                    {quickQuotaDoctor.name} • {quickQuotaDoctor.clinicName}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQuickQuotaDoctor(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveQuickQuota} className="mt-4 space-y-4">
+              <div className="bg-slate-50 rounded-xl p-3 border border-slate-200/80">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                  Physician Details
+                </span>
+                <div className="text-xs font-semibold text-slate-800 flex items-center justify-between">
+                  <span>Specialty: {quickQuotaDoctor.specialty}</span>
+                  <span className="text-emerald-700 font-bold">{quickQuotaDoctor.city || 'Mumbai'}</span>
+                </div>
+              </div>
+
+              {/* Number of Visits and Timeframe */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Configure Visit Frequency & Target
+                </label>
+
+                <div className="grid grid-cols-12 gap-2 items-center">
+                  <div className="col-span-5">
+                    <label className="block text-[11px] font-medium text-slate-500 mb-1">Number of Visits</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        data-testid="quick-quota-target-input"
+                        value={quickQuotaForm.targetVisits}
+                        onChange={(e) =>
+                          setQuickQuotaForm({
+                            ...quickQuotaForm,
+                            targetVisits: Math.max(1, parseInt(e.target.value) || 1)
+                          })
+                        }
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">
+                        calls
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="col-span-2 text-center text-xs font-bold text-slate-400 pt-4">
+                    per
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="block text-[11px] font-medium text-slate-500 mb-1">Period</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="365"
+                      data-testid="quick-quota-value-input"
+                      value={quickQuotaForm.visitFrequencyValue}
+                      onChange={(e) =>
+                        setQuickQuotaForm({
+                          ...quickQuotaForm,
+                          visitFrequencyValue: Math.max(1, parseInt(e.target.value) || 1)
+                        })
+                      }
+                      className="w-full px-2 py-2 text-center bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div className="col-span-3">
+                    <label className="block text-[11px] font-medium text-slate-500 mb-1">Time Unit</label>
+                    <select
+                      data-testid="quick-quota-unit-select"
+                      value={quickQuotaForm.visitFrequencyUnit}
+                      onChange={(e) =>
+                        setQuickQuotaForm({
+                          ...quickQuotaForm,
+                          visitFrequencyUnit: e.target.value as 'days' | 'weeks' | 'months'
+                        })
+                      }
+                      className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="days">Days</option>
+                      <option value="weeks">Weeks</option>
+                      <option value="months">Months</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Live Preview of Setting */}
+                <div className="mt-2 p-2.5 bg-blue-50/70 border border-blue-200/80 rounded-lg flex items-center justify-between">
+                  <div className="text-xs text-blue-900">
+                    <span className="font-bold">Target: </span>
+                    <span>
+                      {quickQuotaForm.targetVisits} visit{quickQuotaForm.targetVisits > 1 ? 's' : ''} every{' '}
+                      {quickQuotaForm.visitFrequencyValue === 1 ? '' : `${quickQuotaForm.visitFrequencyValue} `}
+                      {quickQuotaForm.visitFrequencyUnit}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
+                    Active Rule
+                  </span>
+                </div>
+
+                {/* Quick Presets */}
+                <div className="pt-2">
+                  <span className="text-[11px] font-semibold text-slate-500 block mb-1.5">
+                    Quick Presets:
+                  </span>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setQuickQuotaForm({
+                          targetVisits: 1,
+                          visitFrequencyValue: 15,
+                          visitFrequencyUnit: 'days'
+                        })
+                      }
+                      className="px-2 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors text-center"
+                    >
+                      1 visit / 15 days
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setQuickQuotaForm({
+                          targetVisits: 2,
+                          visitFrequencyValue: 2,
+                          visitFrequencyUnit: 'weeks'
+                        })
+                      }
+                      className="px-2 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors text-center"
+                    >
+                      2 visits / 2 weeks
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setQuickQuotaForm({
+                          targetVisits: 4,
+                          visitFrequencyValue: 1,
+                          visitFrequencyUnit: 'months'
+                        })
+                      }
+                      className="px-2 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors text-center"
+                    >
+                      4 visits / 1 month
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setQuickQuotaDoctor(null)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  data-testid="save-quick-quota-btn"
+                  className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors"
+                >
+                  Update Visits Target
                 </button>
               </div>
             </form>
