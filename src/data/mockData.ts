@@ -1,4 +1,35 @@
-import { Product, Doctor, FieldVisit, SalesRep, OrderOrSampleRequest, RetailCounter, AdminNotification } from '../types';
+import { Product, Doctor, FieldVisit, SalesRep, OrderOrSampleRequest, RetailCounter, AdminNotification, CompanyProfile } from '../types';
+
+export const INITIAL_COMPANY_PROFILE: CompanyProfile = {
+  id: 'tenant-ddb-01',
+  name: 'DDB DRUG CHEM',
+  legalName: 'DDB Drug Chem & Pharmaceuticals Pvt. Ltd.',
+  tagline: 'Quality Formulations & Healthcare Distribution Network',
+  logoUrl: '',
+  logoType: 'preset_icon',
+  presetIconId: 'pill_capsule',
+  primaryColor: '#2563eb', // Pharma Blue
+  drugLicenseNo: 'DL-20B/21B-DLH-2024-9842',
+  gstin: '07AABCD1234E1Z5',
+  panNo: 'AABCD1234E',
+  cin: 'U24239DL2018PTC339841',
+  fssaiLicenseNo: '10019011006542',
+  headOfficeAddress: 'Plot No. 42, Okhla Industrial Area, Phase-III',
+  city: 'New Delhi',
+  state: 'Delhi',
+  pincode: '110020',
+  contactEmail: 'contact@ddbdrugchem.com',
+  contactPhone: '+91 98101 23456',
+  website: 'https://ddbdrugchem.com',
+  invoicePrefix: 'DDB',
+  currencySymbol: '₹',
+  footerDisclaimer: 'All pharmaceutical products supplied in accordance with Drugs & Cosmetics Rules 1945 and Good Distribution Practices (GDP). Goods once sold subject to Delhi jurisdiction.',
+  status: 'active',
+  maxRepsAllowed: 25,
+  planName: 'Enterprise Growth Tier',
+  foundedYear: '2018',
+  updatedAt: new Date().toISOString()
+};
 
 export const INITIAL_PRODUCTS: Product[] = [
   {

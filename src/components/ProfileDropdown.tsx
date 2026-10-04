@@ -12,10 +12,12 @@ import {
   Buildings,
   ArrowClockwise,
   Users,
-  PencilSimple
+  PencilSimple,
+  Database
 } from '@phosphor-icons/react';
 import { EditAdminModal } from './EditAdminModal';
 import { UserAvatar } from './UserAvatar';
+import { FirebaseStatusModal } from './FirebaseStatusModal';
 
 interface ProfileDropdownProps {
   isOpen: boolean;
@@ -38,10 +40,13 @@ export const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
     users,
     remainingSeconds,
     resetInactivityTimer,
-    logout
+    logout,
+    setActiveAdminTab,
+    companyProfile
   } = useApp();
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close when clicking outside
@@ -49,7 +54,7 @@ export const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
     if (!isOpen) return;
 
     const handleClickOutside = (e: MouseEvent) => {
-      if (isEditModalOpen) return;
+      if (isEditModalOpen || isFirebaseModalOpen) return;
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         onClose();
       }
@@ -199,6 +204,28 @@ export const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
           </div>
         </div>
 
+        {/* Company Profile & Dynamic Branding Quick Access */}
+        {role === 'admin' && (
+          <button
+            type="button"
+            id="dropdown-company-branding-btn"
+            data-testid="dropdown-company-branding-btn"
+            onClick={() => {
+              setActiveAdminTab('company');
+              onClose();
+            }}
+            className="w-full py-2.5 px-3 bg-blue-50/70 hover:bg-blue-100/70 text-blue-950 border border-blue-200/80 rounded-xl font-bold text-xs transition-colors flex items-center justify-between cursor-pointer group"
+          >
+            <div className="flex items-center gap-2">
+              <Buildings size={16} weight="duotone" className="text-blue-600 group-hover:scale-110 transition-transform" />
+              <span>Company Profile &amp; Branding</span>
+            </div>
+            <span className="text-[10px] uppercase font-bold text-blue-700 bg-white/80 border border-blue-200 px-1.5 py-0.5 rounded shadow-2xs">
+              SaaS
+            </span>
+          </button>
+        )}
+
         {/* Rep Mobile Frame View (If in sales rep view) */}
         {role === 'sales_rep' && (
           <div>
@@ -288,6 +315,26 @@ export const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
           </button>
         </div>
 
+        {/* Firebase Cloud Database Status & Verification */}
+        <button
+          type="button"
+          id="dropdown-firebase-status-btn"
+          data-testid="dropdown-firebase-status-btn"
+          onClick={() => {
+            setIsFirebaseModalOpen(true);
+          }}
+          className="w-full py-2.5 px-3 bg-gradient-to-r from-orange-50/80 via-amber-50/60 to-orange-50/80 hover:from-orange-100 hover:to-amber-100 text-slate-800 border border-orange-200/90 rounded-xl font-bold text-xs transition-colors flex items-center justify-between cursor-pointer group"
+        >
+          <div className="flex items-center gap-2">
+            <Database size={16} weight="duotone" className="text-orange-600 group-hover:scale-110 transition-transform" />
+            <span>Cloud Database (Firebase)</span>
+          </div>
+          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/90 border border-emerald-200 px-1.5 py-0.5 rounded-full flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>Live Sync</span>
+          </span>
+        </button>
+
         {/* Logout Action */}
         <button
           id="profile-modal-logout-btn"
@@ -308,6 +355,14 @@ export const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
         isOpen={isEditModalOpen}
         onClose={() => {
           setIsEditModalOpen(false);
+        }}
+      />
+
+      {/* Firebase Cloud Database Status & Inspector Modal */}
+      <FirebaseStatusModal
+        isOpen={isFirebaseModalOpen}
+        onClose={() => {
+          setIsFirebaseModalOpen(false);
         }}
       />
     </div>

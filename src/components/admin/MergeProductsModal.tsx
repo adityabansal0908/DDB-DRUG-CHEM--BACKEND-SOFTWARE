@@ -69,7 +69,16 @@ export const MergeProductsModal: React.FC<MergeProductsModalProps> = ({
       return;
     }
 
-    if (window.confirm(`Are you sure you want to remove duplicate formulation "${p.name}" (${p.packaging || p.id})? This cannot be undone.`)) {
+    let confirmed = true;
+    try {
+      if (typeof window !== 'undefined' && window.confirm) {
+        confirmed = window.confirm(`Are you sure you want to remove duplicate formulation "${p.name}" (${p.packaging || p.id})? This cannot be undone.`);
+      }
+    } catch {
+      confirmed = true;
+    }
+
+    if (confirmed) {
       deleteProduct(p.id);
       if (duplicateProducts.length <= 2) {
         onClose();

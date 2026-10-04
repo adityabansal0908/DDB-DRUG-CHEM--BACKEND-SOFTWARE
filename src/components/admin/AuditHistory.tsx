@@ -16,10 +16,12 @@ import {
   User,
   EyeSlash,
   Eye,
-  Info
+  Info,
+  Database
 } from '@phosphor-icons/react';
 import { EditAdminModal } from '../EditAdminModal';
 import { UserAvatar } from '../UserAvatar';
+import { FirebaseStatusModal } from '../FirebaseStatusModal';
 
 export const AuditHistory: React.FC = () => {
   const {
@@ -36,13 +38,16 @@ export const AuditHistory: React.FC = () => {
   const [filterAction, setFilterAction] = useState<string>('ALL');
   const [filterModule, setFilterModule] = useState<string>('ALL');
   const [isEditAdminOpen, setIsEditAdminOpen] = useState(false);
+  const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
 
   const filteredLogs = auditLogs.filter((log) => {
+    const term = (searchTerm || '').toLowerCase().trim();
     const matchesSearch =
-      log.targetItemName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.details.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.userEmail.toLowerCase().includes(searchTerm.toLowerCase());
+      !term ||
+      (log.targetItemName || '').toLowerCase().includes(term) ||
+      (log.details || '').toLowerCase().includes(term) ||
+      (log.userName || '').toLowerCase().includes(term) ||
+      (log.userEmail || '').toLowerCase().includes(term);
 
     const matchesAction = filterAction === 'ALL' || log.actionType === filterAction;
     const matchesModule = filterModule === 'ALL' || log.module === filterModule;
@@ -160,6 +165,23 @@ export const AuditHistory: React.FC = () => {
             }`}
           >
             <span>Redo</span>
+          </button>
+
+          {/* Cloud Firestore Verification Inspector Button */}
+          <button
+            type="button"
+            id="audit-firebase-inspector-btn"
+            data-testid="audit-firebase-inspector-btn"
+            onClick={() => setIsFirebaseModalOpen(true)}
+            title="Inspect Google Cloud Firestore live database storage status and latency"
+            className="inline-flex items-center gap-2 px-3 py-2.5 rounded-lg text-xs font-bold border border-orange-200 bg-orange-50/70 hover:bg-orange-100 text-slate-800 shadow-2xs transition-colors cursor-pointer"
+          >
+            <Database size={16} weight="duotone" className="text-orange-600" />
+            <span className="hidden sm:inline">Cloud Database</span>
+            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-bold bg-white px-1.5 py-0.5 rounded border border-emerald-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>Live DB</span>
+            </span>
           </button>
         </div>
       </div>
@@ -417,6 +439,12 @@ export const AuditHistory: React.FC = () => {
       <EditAdminModal
         isOpen={isEditAdminOpen}
         onClose={() => setIsEditAdminOpen(false)}
+      />
+
+      {/* Cloud Database Verification Modal */}
+      <FirebaseStatusModal
+        isOpen={isFirebaseModalOpen}
+        onClose={() => setIsFirebaseModalOpen(false)}
       />
     </div>
   );

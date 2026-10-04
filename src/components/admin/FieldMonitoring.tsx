@@ -44,10 +44,10 @@ export const FieldMonitoring: React.FC = () => {
     if (searchQuery.trim() === '') return true;
     const query = searchQuery.toLowerCase();
     return (
-      v.doctorName.toLowerCase().includes(query) ||
-      v.clinicName.toLowerCase().includes(query) ||
-      v.repName.toLowerCase().includes(query) ||
-      v.purpose.toLowerCase().includes(query)
+      (v.doctorName || '').toLowerCase().includes(query) ||
+      (v.clinicName || '').toLowerCase().includes(query) ||
+      (v.repName || '').toLowerCase().includes(query) ||
+      (v.purpose || '').toLowerCase().includes(query)
     );
   });
 

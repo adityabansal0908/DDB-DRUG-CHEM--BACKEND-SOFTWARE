@@ -6,6 +6,10 @@ import { ProfileDropdown } from './ProfileDropdown';
 import { UserAvatar } from './UserAvatar';
 import { EditAdminModal } from './EditAdminModal';
 import { NotificationDropdown } from './NotificationDropdown';
+import { TenantSwitcherDropdown } from './TenantSwitcherDropdown';
+
+// Notification bar / bell icon is turned off for now as requested
+const SHOW_NOTIFICATION_BAR = false;
 
 export const Header: React.FC = () => {
   const {
@@ -20,7 +24,8 @@ export const Header: React.FC = () => {
     notifications,
     canGoBack,
     goBack,
-    previousScreenName
+    previousScreenName,
+    companyProfile
   } = useApp();
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -67,7 +72,7 @@ export const Header: React.FC = () => {
               ? isSidebarCollapsed
                 ? 'Click company logo to expand Operations Console'
                 : 'Click company logo to collapse Operations Console'
-              : 'DDB DRUG CHEM'
+              : (companyProfile.name || 'DDB DRUG CHEM')
           }
           className={`flex items-center gap-2.5 sm:gap-3 text-left rounded-xl transition-all p-1 -m-1 group ${
             role === 'admin'
@@ -96,58 +101,63 @@ export const Header: React.FC = () => {
           </div>
           <div>
             <span className="font-heading font-bold text-slate-900 text-lg sm:text-xl tracking-tight leading-none block">
-              DDB DRUG CHEM
+              {companyProfile?.name || 'DDB DRUG CHEM'}
             </span>
           </div>
         </button>
       </div>
 
-      {/* Right side: Bell icon and Profile icon only */}
+      {/* Right side: Profile icon (Bell icon notification bar turned off for now as requested) */}
       <div className="flex items-center gap-2 sm:gap-3 relative">
-        {/* Bell Icon Button */}
-        <div className="relative">
-          <button
-            type="button"
-            id="header-bell-icon"
-            data-testid="header-bell-icon"
-            onClick={() => {
-              setIsNotificationsOpen(prev => {
-                const next = !prev;
-                if (next) setIsProfileOpen(false);
-                return next;
-              });
-            }}
-            title={
-              unreadNotificationsCount > 0
-                ? `${unreadNotificationsCount} unread field alerts (${notifications.length} total)`
-                : `Real-time field notifications (${notifications.length} alerts)`
-            }
-            className={`p-2 rounded-xl transition-all cursor-pointer relative flex items-center justify-center ${
-              isNotificationsOpen
-                ? 'bg-blue-50 text-blue-600 ring-2 ring-blue-500/30'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <Bell size={22} weight={unreadNotificationsCount > 0 ? 'fill' : 'bold'} className={unreadNotificationsCount > 0 ? 'text-blue-600' : ''} />
-            {unreadNotificationsCount > 0 ? (
-              <span
-                id="header-bell-unread-badge"
-                data-testid="header-bell-unread-badge"
-                className="absolute -top-1 -right-1 min-w-[19px] h-[19px] px-1 bg-red-600 text-white rounded-full text-[10px] font-bold flex items-center justify-center ring-2 ring-white shadow-xs animate-pulse"
-              >
-                {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
-              </span>
-            ) : pendingVisitsCount > 0 || pendingOrdersCount > 0 ? (
-              <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-blue-600 rounded-full ring-2 ring-white"></span>
-            ) : null}
-          </button>
+        {/* Bell Icon Button (Turned off for now) */}
+        {SHOW_NOTIFICATION_BAR && (
+          <div className="relative">
+            <button
+              type="button"
+              id="header-bell-icon"
+              data-testid="header-bell-icon"
+              onClick={() => {
+                setIsNotificationsOpen(prev => {
+                  const next = !prev;
+                  if (next) setIsProfileOpen(false);
+                  return next;
+                });
+              }}
+              title={
+                unreadNotificationsCount > 0
+                  ? `${unreadNotificationsCount} unread field alerts (${notifications.length} total)`
+                  : `Real-time field notifications (${notifications.length} alerts)`
+              }
+              className={`p-2 rounded-xl transition-all cursor-pointer relative flex items-center justify-center ${
+                isNotificationsOpen
+                  ? 'bg-blue-50 text-blue-600 ring-2 ring-blue-500/30'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Bell size={22} weight={unreadNotificationsCount > 0 ? 'fill' : 'bold'} className={unreadNotificationsCount > 0 ? 'text-blue-600' : ''} />
+              {unreadNotificationsCount > 0 ? (
+                <span
+                  id="header-bell-unread-badge"
+                  data-testid="header-bell-unread-badge"
+                  className="absolute -top-1 -right-1 min-w-[19px] h-[19px] px-1 bg-red-600 text-white rounded-full text-[10px] font-bold flex items-center justify-center ring-2 ring-white shadow-xs animate-pulse"
+                >
+                  {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+                </span>
+              ) : pendingVisitsCount > 0 || pendingOrdersCount > 0 ? (
+                <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-blue-600 rounded-full ring-2 ring-white"></span>
+              ) : null}
+            </button>
 
-          {/* Real-time Field Alerts Dropdown */}
-          <NotificationDropdown
-            isOpen={isNotificationsOpen}
-            onClose={() => setIsNotificationsOpen(false)}
-          />
-        </div>
+            {/* Real-time Field Alerts Dropdown */}
+            <NotificationDropdown
+              isOpen={isNotificationsOpen}
+              onClose={() => setIsNotificationsOpen(false)}
+            />
+          </div>
+        )}
+
+        {/* Tenant Organization Switcher */}
+        <TenantSwitcherDropdown />
 
         {/* Profile Icon Button (Tapping opens the Profile Section) */}
         <div className="relative">

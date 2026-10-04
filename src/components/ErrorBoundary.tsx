@@ -34,7 +34,11 @@ export class ErrorBoundary extends React.Component<Props, State> {
     if (this.props.onReset) {
       this.props.onReset();
     } else {
-      window.location.reload();
+      try {
+        window.location.reload();
+      } catch {
+        // State is already cleared to attempt component re-mount
+      }
     }
   };
 

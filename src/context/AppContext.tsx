@@ -14,7 +14,10 @@ import {
   RepTabKey,
   NavigationScreen,
   AdminNotification,
-  NotificationType
+  NotificationType,
+  CompanyProfile,
+  Organization,
+  TenantPlan
 } from '../types';
 import {
   INITIAL_DOCTORS,
@@ -23,8 +26,15 @@ import {
   INITIAL_ORDERS,
   INITIAL_PRODUCTS,
   INITIAL_RETAIL_COUNTERS,
-  INITIAL_NOTIFICATIONS
+  INITIAL_NOTIFICATIONS,
+  INITIAL_COMPANY_PROFILE
 } from '../data/mockData';
+import {
+  INITIAL_ORGANIZATIONS,
+  orgToCompanyProfile,
+  APEX_ISOLATED_DATA,
+  ZENITH_ISOLATED_DATA
+} from '../data/tenantData';
 import { toast } from 'sonner';
 import { playNotificationChime } from '../utils/sound';
 import { applyFifoDeduction } from '../utils/fifoHelper';
@@ -345,12 +355,31 @@ interface AppContextType {
     customProductsList?: Product[],
     options?: { forceNotify?: boolean }
   ) => { reorderCount: number; outOfStockCount: number };
+
+  // Company Profile & SaaS White-Label Branding
+  companyProfile: CompanyProfile;
+  updateCompanyProfile: (updates: Partial<CompanyProfile>) => void;
+  resetCompanyProfileToDefault: () => void;
+
+  // Multi-Tenancy & Organization Isolation
+  organizations: Organization[];
+  activeOrganization: Organization;
+  activeTenantId: string;
+  switchOrganization: (orgId: string) => void;
+  createOrganization: (orgData: Partial<Organization> & { seedStarterData?: boolean }) => Organization;
+  updateOrganization: (orgId: string, updates: Partial<Organization>) => void;
+  deleteOrganization: (orgId: string) => boolean;
+  tenantQuotaUsage: {
+    reps: { current: number; max: number };
+    products: { current: number; max: number };
+    planName: string;
+  };
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 // 15 minutes inactivity timeout in milliseconds (15 * 60 * 1000 = 900,000 ms)
-const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
+const INACTIVITY_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours to prevent random mid-session logouts
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Authentication user accounts store
@@ -366,20 +395,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return INITIAL_USERS;
   });
 
-  // Current logged in user (null by default so the signed-out screen is shown)
+  // Current logged in user (defaults to active administrator Aditya Bansal if not explicitly signed out)
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
     const saved = localStorage.getItem('ddb_current_user');
-    if (saved && saved !== 'signed_out') {
+    if (saved === 'signed_out') {
+      return null;
+    }
+    if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (parsed && parsed.email) {
           return parsed;
         }
       } catch (e) {
-        return null;
+        // Fall back to default admin user
       }
     }
-    return null;
+    return INITIAL_USERS[1] || INITIAL_USERS[0];
   });
 
   const [role, setRole] = useState<UserRole>(() => {
@@ -412,6 +444,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return 'Sales Reps Quota';
         case 'orders':
           return 'Orders & Approvals';
+        case 'medical_stores':
+          return 'Medical Stores';
+        case 'company':
+          return 'Company Profile & Branding';
+        case 'tenants':
+          return 'Tenants & Organizations';
         case 'history':
           return 'Audit Logs';
         default:
@@ -526,10 +564,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsSidebarCollapsed(prev => !prev);
   };
 
-  // Products
-  const [products, setProducts] = useState<Product[]>(() => {
+  // Multi-Tenancy & Organizations State
+  const [organizations, setOrganizations] = useState<Organization[]>(() => {
+    const saved = localStorage.getItem('ddb_saas_organizations_v1');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch (e) {}
+    }
+    return INITIAL_ORGANIZATIONS;
+  });
+
+  const [activeTenantId, setActiveTenantId] = useState<string>(() => {
+    return localStorage.getItem('ddb_active_tenant_id_v1') || 'tenant-ddb-01';
+  });
+
+  const activeOrganization = useMemo(() => {
+    return organizations.find(o => o.id === activeTenantId) || organizations[0] || INITIAL_ORGANIZATIONS[0];
+  }, [organizations, activeTenantId]);
+
+  useEffect(() => {
+    localStorage.setItem('ddb_saas_organizations_v1', JSON.stringify(organizations));
+  }, [organizations]);
+
+  // Products (All partitions)
+  const [allProducts, setAllProducts] = useState<Product[]>(() => {
     const saved = localStorage.getItem('ddb_products');
     const isZeroStockApplied = localStorage.getItem('ddb_zero_stock_blank_pricing_v2') === 'true';
+    let baseList: Product[] = [];
 
     if (saved) {
       try {
@@ -538,6 +603,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (!isZeroStockApplied) {
             const updated = parsed.map(p => ({
               ...p,
+              tenantId: p.tenantId || 'tenant-ddb-01',
               stockUnits: 0,
               pricingToStockist: undefined,
               pricingToRetailer: undefined,
@@ -547,80 +613,192 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }));
             localStorage.setItem('ddb_products', JSON.stringify(updated));
             localStorage.setItem('ddb_zero_stock_blank_pricing_v2', 'true');
-            return updated;
+            baseList = updated;
+          } else {
+            baseList = parsed.map(p => ({ ...p, tenantId: p.tenantId || 'tenant-ddb-01' }));
           }
-          return parsed;
         }
       } catch (e) {
-        return INITIAL_PRODUCTS;
+        baseList = INITIAL_PRODUCTS.map(p => ({ ...p, tenantId: 'tenant-ddb-01' }));
       }
+    } else {
+      localStorage.setItem('ddb_zero_stock_blank_pricing_v2', 'true');
+      baseList = INITIAL_PRODUCTS.map(p => ({ ...p, tenantId: 'tenant-ddb-01' }));
     }
-    localStorage.setItem('ddb_zero_stock_blank_pricing_v2', 'true');
-    return INITIAL_PRODUCTS;
+
+    // Seed isolated demo tenant products if missing
+    if (!baseList.some(p => p.tenantId === 'tenant-apex-02')) {
+      baseList = [...baseList, ...APEX_ISOLATED_DATA.products];
+    }
+    if (!baseList.some(p => p.tenantId === 'tenant-zenith-03')) {
+      baseList = [...baseList, ...ZENITH_ISOLATED_DATA.products];
+    }
+    return baseList;
   });
+
+  // Backward compatible alias
+  const setProducts = setAllProducts;
+
+  // Active Organization Partitioned Products
+  const products = useMemo(() => {
+    return allProducts.filter(p => (p.tenantId || 'tenant-ddb-01') === activeOrganization.id);
+  }, [allProducts, activeOrganization.id]);
 
   // Undo / Redo Stacks for Product Catalog
   const [undoStack, setUndoStack] = useState<{ products: Product[]; description: string }[]>([]);
   const [redoStack, setRedoStack] = useState<{ products: Product[]; description: string }[]>([]);
   const [lastActionSummary, setLastActionSummary] = useState<string | null>(null);
 
-  // History & Audit Logs
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
+  // History & Audit Logs (All partitions)
+  const [allAuditLogs, setAllAuditLogs] = useState<AuditLog[]>(() => {
     const saved = localStorage.getItem('ddb_audit_logs');
+    let baseList: AuditLog[] = [];
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          baseList = parsed.map(l => ({ ...l, tenantId: l.tenantId || 'tenant-ddb-01' }));
+        }
       } catch (e) {
-        return INITIAL_AUDIT_LOGS;
+        baseList = INITIAL_AUDIT_LOGS.map(l => ({ ...l, tenantId: 'tenant-ddb-01' }));
       }
     }
-    return INITIAL_AUDIT_LOGS;
+    if (baseList.length === 0) {
+      baseList = INITIAL_AUDIT_LOGS.map(l => ({ ...l, tenantId: 'tenant-ddb-01' }));
+    }
+    return baseList;
   });
 
-  const [doctors, setDoctors] = useState<Doctor[]>(() => {
+  const setAuditLogs = setAllAuditLogs;
+
+  const auditLogs = useMemo(() => {
+    return allAuditLogs.filter(l => (l.tenantId || 'tenant-ddb-01') === activeOrganization.id);
+  }, [allAuditLogs, activeOrganization.id]);
+
+  // Company Profile & SaaS White-Label Branding State (Synchronized with Active Tenant)
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(() => {
+    const saved = localStorage.getItem('ddb_saas_company_profile_v1');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.name) {
+          return { ...INITIAL_COMPANY_PROFILE, ...parsed };
+        }
+      } catch (e) {
+        return orgToCompanyProfile(activeOrganization);
+      }
+    }
+    return orgToCompanyProfile(activeOrganization);
+  });
+
+  // Doctors (All partitions)
+  const [allDoctors, setAllDoctors] = useState<Doctor[]>(() => {
     const saved = localStorage.getItem('pharmatrack_doctors');
-    return saved ? JSON.parse(saved) : INITIAL_DOCTORS;
+    let baseList: Doctor[] = [];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          baseList = parsed.map(d => ({ ...d, tenantId: d.tenantId || 'tenant-ddb-01' }));
+        }
+      } catch (e) {
+        baseList = INITIAL_DOCTORS.map(d => ({ ...d, tenantId: 'tenant-ddb-01' }));
+      }
+    }
+    if (baseList.length === 0) {
+      baseList = INITIAL_DOCTORS.map(d => ({ ...d, tenantId: 'tenant-ddb-01' }));
+    }
+    if (!baseList.some(d => d.tenantId === 'tenant-apex-02')) {
+      baseList = [...baseList, ...APEX_ISOLATED_DATA.doctors];
+    }
+    if (!baseList.some(d => d.tenantId === 'tenant-zenith-03')) {
+      baseList = [...baseList, ...ZENITH_ISOLATED_DATA.doctors];
+    }
+    return baseList;
   });
 
-  const [reps, setReps] = useState<SalesRep[]>(() => {
+  const setDoctors = setAllDoctors;
+
+  const doctors = useMemo(() => {
+    return allDoctors.filter(d => (d.tenantId || 'tenant-ddb-01') === activeOrganization.id);
+  }, [allDoctors, activeOrganization.id]);
+
+  // Sales Reps (All partitions)
+  const [allReps, setAllReps] = useState<SalesRep[]>(() => {
     const saved = localStorage.getItem('pharmatrack_reps');
+    let baseList: SalesRep[] = [];
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length >= INITIAL_REPS.length) {
-          return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          baseList = parsed.map(r => ({ ...r, tenantId: r.tenantId || 'tenant-ddb-01' }));
         }
       } catch (e) {
-        return INITIAL_REPS;
+        baseList = INITIAL_REPS.map(r => ({ ...r, tenantId: 'tenant-ddb-01' }));
       }
     }
-    return INITIAL_REPS;
+    if (baseList.length === 0) {
+      baseList = INITIAL_REPS.map(r => ({ ...r, tenantId: 'tenant-ddb-01' }));
+    }
+    if (!baseList.some(r => r.tenantId === 'tenant-apex-02')) {
+      baseList = [...baseList, ...APEX_ISOLATED_DATA.reps];
+    }
+    if (!baseList.some(r => r.tenantId === 'tenant-zenith-03')) {
+      baseList = [...baseList, ...ZENITH_ISOLATED_DATA.reps];
+    }
+    return baseList;
   });
 
-  const [retailCounters, setRetailCounters] = useState<RetailCounter[]>(() => {
+  const setReps = setAllReps;
+
+  const reps = useMemo(() => {
+    return allReps.filter(r => (r.tenantId || 'tenant-ddb-01') === activeOrganization.id);
+  }, [allReps, activeOrganization.id]);
+
+  // Retail Counters (All partitions)
+  const [allRetailCounters, setAllRetailCounters] = useState<RetailCounter[]>(() => {
     const saved = localStorage.getItem('pharmatrack_retail_counters');
+    let baseList: RetailCounter[] = [];
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length >= INITIAL_RETAIL_COUNTERS.length) {
-          return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          baseList = parsed.map(rc => ({ ...rc, tenantId: rc.tenantId || 'tenant-ddb-01' }));
         }
       } catch (e) {
-        return INITIAL_RETAIL_COUNTERS;
+        baseList = INITIAL_RETAIL_COUNTERS.map(rc => ({ ...rc, tenantId: 'tenant-ddb-01' }));
       }
     }
-    return INITIAL_RETAIL_COUNTERS;
+    if (baseList.length === 0) {
+      baseList = INITIAL_RETAIL_COUNTERS.map(rc => ({ ...rc, tenantId: 'tenant-ddb-01' }));
+    }
+    if (!baseList.some(rc => rc.tenantId === 'tenant-apex-02')) {
+      baseList = [...baseList, ...APEX_ISOLATED_DATA.retailCounters];
+    }
+    if (!baseList.some(rc => rc.tenantId === 'tenant-zenith-03')) {
+      baseList = [...baseList, ...ZENITH_ISOLATED_DATA.retailCounters];
+    }
+    return baseList;
   });
 
-  useEffect(() => {
-    localStorage.setItem('pharmatrack_reps', JSON.stringify(reps));
-  }, [reps]);
+  const setRetailCounters = setAllRetailCounters;
+
+  const retailCounters = useMemo(() => {
+    return allRetailCounters.filter(rc => (rc.tenantId || 'tenant-ddb-01') === activeOrganization.id);
+  }, [allRetailCounters, activeOrganization.id]);
 
   useEffect(() => {
-    localStorage.setItem('pharmatrack_retail_counters', JSON.stringify(retailCounters));
-  }, [retailCounters]);
+    localStorage.setItem('pharmatrack_reps', JSON.stringify(allReps));
+  }, [allReps]);
 
-  const [currentRep, setCurrentRep] = useState<SalesRep>(() => reps[0] || INITIAL_REPS[0]);
+  useEffect(() => {
+    localStorage.setItem('pharmatrack_retail_counters', JSON.stringify(allRetailCounters));
+  }, [allRetailCounters]);
+
+  const [currentRep, setCurrentRep] = useState<SalesRep>(() => {
+    const repForOrg = allReps.find(r => (r.tenantId || 'tenant-ddb-01') === activeTenantId);
+    return repForOrg || allReps[0] || INITIAL_REPS[0];
+  });
 
   // Rep Account Catalogue Column Visibility Permissions (repId -> array of hidden column keys)
   const [repColumnPermissions, setRepColumnPermissions] = useState<Record<string, ProductCatalogColumnKey[]>>(() => {
@@ -644,51 +822,95 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('ddb_rep_column_permissions', JSON.stringify(repColumnPermissions));
   }, [repColumnPermissions]);
 
-  const [visits, setVisits] = useState<FieldVisit[]>(() => {
+  // Field Visits (All partitions)
+  const [allVisits, setAllVisits] = useState<FieldVisit[]>(() => {
     const saved = localStorage.getItem('pharmatrack_visits');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length >= INITIAL_VISITS.length) {
-          return parsed;
-        }
-      } catch (e) {
-        return INITIAL_VISITS;
-      }
-    }
-    return INITIAL_VISITS;
-  });
-
-  const [orders, setOrders] = useState<OrderOrSampleRequest[]>(() => {
-    const saved = localStorage.getItem('pharmatrack_orders');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length >= INITIAL_ORDERS.length) {
-          return parsed;
-        }
-      } catch (e) {
-        return INITIAL_ORDERS;
-      }
-    }
-    return INITIAL_ORDERS;
-  });
-
-  // Real-time notifications state (for Admin Dashboard & Field Alerts)
-  const [notifications, setNotifications] = useState<AdminNotification[]>(() => {
-    const saved = localStorage.getItem('ddb_admin_notifications');
+    let baseList: FieldVisit[] = [];
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          baseList = parsed.map(v => ({ ...v, tenantId: v.tenantId || 'tenant-ddb-01' }));
         }
       } catch (e) {
-        return INITIAL_NOTIFICATIONS;
+        baseList = INITIAL_VISITS.map(v => ({ ...v, tenantId: 'tenant-ddb-01' }));
       }
     }
-    return INITIAL_NOTIFICATIONS;
+    if (baseList.length === 0) {
+      baseList = INITIAL_VISITS.map(v => ({ ...v, tenantId: 'tenant-ddb-01' }));
+    }
+    if (!baseList.some(v => v.tenantId === 'tenant-apex-02')) {
+      baseList = [...baseList, ...APEX_ISOLATED_DATA.visits];
+    }
+    if (!baseList.some(v => v.tenantId === 'tenant-zenith-03')) {
+      baseList = [...baseList, ...ZENITH_ISOLATED_DATA.visits];
+    }
+    return baseList;
   });
+
+  const setVisits = setAllVisits;
+
+  const visits = useMemo(() => {
+    return allVisits.filter(v => (v.tenantId || 'tenant-ddb-01') === activeOrganization.id);
+  }, [allVisits, activeOrganization.id]);
+
+  // Orders (All partitions)
+  const [allOrders, setAllOrders] = useState<OrderOrSampleRequest[]>(() => {
+    const saved = localStorage.getItem('pharmatrack_orders');
+    let baseList: OrderOrSampleRequest[] = [];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          baseList = parsed.map(o => ({ ...o, tenantId: o.tenantId || 'tenant-ddb-01' }));
+        }
+      } catch (e) {
+        baseList = INITIAL_ORDERS.map(o => ({ ...o, tenantId: 'tenant-ddb-01' }));
+      }
+    }
+    if (baseList.length === 0) {
+      baseList = INITIAL_ORDERS.map(o => ({ ...o, tenantId: 'tenant-ddb-01' }));
+    }
+    if (!baseList.some(o => o.tenantId === 'tenant-apex-02')) {
+      baseList = [...baseList, ...APEX_ISOLATED_DATA.orders];
+    }
+    if (!baseList.some(o => o.tenantId === 'tenant-zenith-03')) {
+      baseList = [...baseList, ...ZENITH_ISOLATED_DATA.orders];
+    }
+    return baseList;
+  });
+
+  const setOrders = setAllOrders;
+
+  const orders = useMemo(() => {
+    return allOrders.filter(o => (o.tenantId || 'tenant-ddb-01') === activeOrganization.id);
+  }, [allOrders, activeOrganization.id]);
+
+  // Real-time notifications state (All partitions)
+  const [allNotifications, setAllNotifications] = useState<AdminNotification[]>(() => {
+    const saved = localStorage.getItem('ddb_admin_notifications');
+    let baseList: AdminNotification[] = [];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          baseList = parsed.map(n => ({ ...n, tenantId: n.tenantId || 'tenant-ddb-01' }));
+        }
+      } catch (e) {
+        baseList = INITIAL_NOTIFICATIONS.map(n => ({ ...n, tenantId: 'tenant-ddb-01' }));
+      }
+    }
+    if (baseList.length === 0) {
+      baseList = INITIAL_NOTIFICATIONS.map(n => ({ ...n, tenantId: 'tenant-ddb-01' }));
+    }
+    return baseList.filter(n => n.type !== 'out_of_stock' && n.type !== 'reorder_level_reached');
+  });
+
+  const setNotifications = setAllNotifications;
+
+  const notifications = useMemo(() => {
+    return allNotifications.filter(n => (n.tenantId || 'tenant-ddb-01') === activeOrganization.id);
+  }, [allNotifications, activeOrganization.id]);
 
   const [notificationSoundEnabled, setNotificationSoundEnabled] = useState<boolean>(() => {
     const saved = localStorage.getItem('ddb_notification_sound');
@@ -716,6 +938,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         read?: boolean;
       }
     ) => {
+      // Turn off "less stock" / inventory depletion alerts as requested
+      if (notifData.type === 'out_of_stock' || notifData.type === 'reorder_level_reached') {
+        return;
+      }
+
       const now = new Date();
       const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const newNotif: AdminNotification = {
@@ -789,96 +1016,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   // Automated Re-Order & Stock Alert System:
-  // Monitors stock levels, distinguishes between 'reorder_level_reached' and 'out_of_stock'
+  // Turned off for now as requested by user ("less stock" / inventory notifications disabled)
   const alertedStockStatesRef = useRef<Map<string, 'reorder' | 'out_of_stock'>>(new Map());
 
   const checkAndTriggerStockAlerts = useCallback(
-    (customProductsList?: Product[], options?: { forceNotify?: boolean }): { reorderCount: number; outOfStockCount: number } => {
-      const prods = customProductsList || products;
-      let reorderCount = 0;
-      let outOfStockCount = 0;
-
-      prods.forEach(prod => {
-        const stock = prod.stockUnits ?? 0;
-        const reorderThreshold = prod.reorderLevel ?? 500;
-        const isHighDemand = prod.isHighDemand ?? false;
-        const previousAlertState = alertedStockStatesRef.current.get(prod.id);
-
-        if (stock === 0) {
-          outOfStockCount++;
-          // Trigger 'out_of_stock' alert if not already alerted or forceNotify
-          if (options?.forceNotify || previousAlertState !== 'out_of_stock') {
-            alertedStockStatesRef.current.set(prod.id, 'out_of_stock');
-            addNotification({
-              type: 'out_of_stock',
-              title: `🚨 Out of Stock: ${prod.name}`,
-              message: `Formulation "${prod.name}" (${prod.packaging}) is completely depleted (0 units in depot). Field sales order fulfillment is paused.`,
-              repId: 'system-inventory',
-              repName: 'Depot Warehouse Monitor',
-              priority: 'urgent',
-              targetTab: 'products',
-              metadata: {
-                productId: prod.id,
-                productName: prod.name,
-                currentStock: 0,
-                reorderLevel: reorderThreshold,
-                isHighDemand,
-                details: 'Critical depot depletion alert'
-              }
-            });
-          }
-        } else if (stock <= reorderThreshold) {
-          reorderCount++;
-          // Trigger 'reorder_level_reached' alert if not already alerted for reorder or forceNotify
-          // Specifically automated alert when high-demand products reach re-order level!
-          if (options?.forceNotify || previousAlertState !== 'reorder') {
-            alertedStockStatesRef.current.set(prod.id, 'reorder');
-            const alertTitle = isHighDemand
-              ? `🔥 Re-Order Alert (High-Demand): ${prod.name}`
-              : `⚠️ Re-Order Level Reached: ${prod.name}`;
-
-            const alertMsg = isHighDemand
-              ? `High-demand formulation "${prod.name}" has reached re-order level (${stock.toLocaleString()} units remaining <= safety threshold of ${reorderThreshold.toLocaleString()} units). Urgent procurement replenishment advised.`
-              : `Formulation "${prod.name}" has reached re-order level with ${stock.toLocaleString()} units remaining (safety threshold: ${reorderThreshold.toLocaleString()} units).`;
-
-            addNotification({
-              type: 'reorder_level_reached',
-              title: alertTitle,
-              message: alertMsg,
-              repId: 'system-inventory',
-              repName: 'Procurement Automation',
-              priority: isHighDemand ? 'urgent' : 'high',
-              targetTab: 'products',
-              metadata: {
-                productId: prod.id,
-                productName: prod.name,
-                currentStock: stock,
-                reorderLevel: reorderThreshold,
-                isHighDemand,
-                details: `Re-order threshold: ${reorderThreshold} units`
-              }
-            });
-          }
-        } else {
-          // Stock is healthy above reorder threshold - clear state so future drops alert again
-          alertedStockStatesRef.current.delete(prod.id);
-        }
-      });
-
-      return { reorderCount, outOfStockCount };
+    (_customProductsList?: Product[], _options?: { forceNotify?: boolean }): { reorderCount: number; outOfStockCount: number } => {
+      // Stock inventory notifications turned off for now as requested
+      return { reorderCount: 0, outOfStockCount: 0 };
     },
-    [products, addNotification]
+    []
   );
 
   // Automated initial inventory check on mount or when products list changes
+  // (Turned off for now as requested by user)
   useEffect(() => {
-    if (products.length > 0) {
-      // Small timeout to allow initial state hydration
-      const timer = setTimeout(() => {
-        checkAndTriggerStockAlerts(products);
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
+    // Inventory alert checks disabled
   }, [products.length]);
 
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
@@ -974,7 +1126,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       details: string,
       previousStateSnippet?: string,
       newStateSnippet?: string,
-      changeCategory?: 'stock' | 'pricing' | 'formulation' | 'general',
+      changeCategory?: 'stock' | 'pricing' | 'formulation' | 'general' | 'tenant',
       fieldDiffs?: AuditLog['fieldDiffs'],
       reason?: string
     ) => {
@@ -982,6 +1134,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const formattedTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const newLog: AuditLog = {
         id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        tenantId: activeOrganization.id,
         timestamp: now.toISOString(),
         formattedTime: `Today, ${formattedTime}`,
         userEmail: currentUser?.email || 'adityabansal0810@gmail.com',
@@ -1001,7 +1154,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setAuditLogs(prev => [newLog, ...prev]);
       saveDocument('audit_logs', newLog).catch(() => {});
     },
-    [currentUser, role]
+    [currentUser, role, activeOrganization.id]
   );
 
   // Sync users & audit logs to localStorage
@@ -1018,24 +1171,444 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('ddb_products', JSON.stringify(products));
-  }, [products]);
+    localStorage.setItem('ddb_products', JSON.stringify(allProducts));
+  }, [allProducts]);
 
   useEffect(() => {
-    localStorage.setItem('ddb_audit_logs', JSON.stringify(auditLogs));
-  }, [auditLogs]);
+    localStorage.setItem('ddb_audit_logs', JSON.stringify(allAuditLogs));
+  }, [allAuditLogs]);
+
+  // Sync Company Profile to localStorage & Firestore
+  useEffect(() => {
+    localStorage.setItem('ddb_saas_company_profile_v1', JSON.stringify(companyProfile));
+    saveDocument('company_profile', companyProfile).catch(() => {});
+  }, [companyProfile]);
+
+  // Update Company Profile & White-Label Branding
+  const updateCompanyProfile = useCallback(
+    (updates: Partial<CompanyProfile>) => {
+      setCompanyProfile(prev => {
+        const next: CompanyProfile = {
+          ...prev,
+          ...updates,
+          updatedAt: new Date().toISOString()
+        };
+
+        const diffs: AuditLog['fieldDiffs'] = [];
+        const keysToCheck: (keyof CompanyProfile)[] = [
+          'name',
+          'legalName',
+          'tagline',
+          'primaryColor',
+          'drugLicenseNo',
+          'gstin',
+          'panNo',
+          'cin',
+          'fssaiLicenseNo',
+          'headOfficeAddress',
+          'city',
+          'state',
+          'pincode',
+          'contactEmail',
+          'contactPhone',
+          'website',
+          'invoicePrefix',
+          'currencySymbol',
+          'footerDisclaimer',
+          'logoType',
+          'presetIconId'
+        ];
+
+        keysToCheck.forEach(k => {
+          if (updates[k] !== undefined && updates[k] !== prev[k]) {
+            diffs.push({
+              field: String(k),
+              label: String(k).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()),
+              oldValue: String(prev[k] || '—'),
+              newValue: String(updates[k] || '—')
+            });
+          }
+        });
+
+        if (diffs.length > 0 || updates.logoUrl !== undefined) {
+          addAuditLog(
+            'UPDATE',
+            'Company Profile & Branding',
+            next.name || 'Company Profile',
+            `Updated corporate branding & credentials (${diffs.length} attributes modified: ${diffs.map(d => d.label).join(', ') || 'Custom Logo'}).`,
+            `Previous Name: ${prev.name}, Color: ${prev.primaryColor}`,
+            `New Name: ${next.name}, Color: ${next.primaryColor}`,
+            'general',
+            diffs.length > 0 ? diffs : undefined
+          );
+        }
+
+        // Also sync changes to the active organization record
+        setOrganizations(prevOrgs => {
+          const updated = prevOrgs.map(o =>
+            o.id === activeTenantId
+              ? {
+                  ...o,
+                  name: next.name,
+                  legalName: next.legalName,
+                  tagline: next.tagline,
+                  primaryColor: next.primaryColor || o.primaryColor,
+                  logoUrl: next.logoUrl,
+                  logoType: next.logoType,
+                  presetIconId: next.presetIconId,
+                  drugLicenseNo: next.drugLicenseNo,
+                  gstin: next.gstin,
+                  headOfficeAddress: next.headOfficeAddress,
+                  city: next.city,
+                  state: next.state,
+                  pincode: next.pincode,
+                  contactEmail: next.contactEmail,
+                  contactPhone: next.contactPhone,
+                  website: next.website,
+                  invoicePrefix: next.invoicePrefix,
+                  currencySymbol: next.currencySymbol,
+                  updatedAt: new Date().toISOString()
+                }
+              : o
+          );
+          localStorage.setItem('ddb_saas_organizations_v1', JSON.stringify(updated));
+          const target = updated.find(o => o.id === activeTenantId);
+          if (target) saveDocument('organizations', target).catch(() => {});
+          return updated;
+        });
+
+        toast.success('Company profile & branding updated successfully');
+        return next;
+      });
+    },
+    [addAuditLog, activeTenantId]
+  );
+
+  // Reset Company Profile to Factory Default Template
+  const resetCompanyProfileToDefault = useCallback(() => {
+    setCompanyProfile(prev => {
+      addAuditLog(
+        'RESET' as any,
+        'Company Profile & Branding',
+        'Company Profile & Branding',
+        'Restored default demo pharmaceutical company branding profile.',
+        `Custom Profile: ${prev.name}`,
+        `Default Profile: ${INITIAL_COMPANY_PROFILE.name}`,
+        'general'
+      );
+      toast.info('Company profile reset to default pharma template');
+      return { ...INITIAL_COMPANY_PROFILE, updatedAt: new Date().toISOString() };
+    });
+  }, [addAuditLog]);
+
+  // Switch Organization Context
+  const switchOrganization = useCallback(
+    (orgId: string) => {
+      const target = organizations.find(o => o.id === orgId);
+      if (!target) {
+        toast.error('Target organization not found');
+        return;
+      }
+
+      setActiveTenantId(target.id);
+      localStorage.setItem('ddb_active_tenant_id_v1', target.id);
+      setCompanyProfile(orgToCompanyProfile(target));
+
+      // Switch current sales rep to one belonging to this organization
+      const targetRep = allReps.find(r => (r.tenantId || 'tenant-ddb-01') === target.id);
+      if (targetRep) {
+        setCurrentRep(targetRep);
+      }
+
+      // Add audit log for tenant partition switch
+      const now = new Date();
+      const formattedTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const switchLog: AuditLog = {
+        id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        tenantId: target.id,
+        timestamp: now.toISOString(),
+        formattedTime: `Today, ${formattedTime}`,
+        userEmail: currentUser?.email || 'adityabansal0810@gmail.com',
+        userName: currentUser?.name || 'Administrator',
+        userRole: currentUser?.role || role,
+        actionType: 'TENANT_SWITCH',
+        module: 'Tenants & Organizations',
+        targetItemName: target.name,
+        details: `Switched active organization context to "${target.name}" (${target.id}, Plan: ${target.plan.toUpperCase()}). All collections strictly partitioned.`,
+        changeCategory: 'tenant'
+      };
+
+      setAllAuditLogs(prev => [switchLog, ...prev]);
+      saveDocument('audit_logs', switchLog).catch(() => {});
+
+      toast.success(`Switched to organization "${target.name}" (${target.plan.toUpperCase()} Tier)`);
+    },
+    [organizations, allReps, currentUser, role]
+  );
+
+  // Provision New Tenant Organization
+  const createOrganization = useCallback(
+    (orgData: Partial<Organization> & { seedStarterData?: boolean }): Organization => {
+      const rawSlug = (orgData.slug || orgData.name || 'org')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+      const slug = rawSlug || `org-${Date.now().toString(36)}`;
+      const orgId = `tenant-${slug}-${Date.now().toString(36).substring(0, 4)}`;
+
+      const newOrg: Organization = {
+        id: orgId,
+        name: orgData.name || 'New Pharma Organization',
+        slug,
+        legalName: orgData.legalName || `${orgData.name || 'Pharma'} Private Limited`,
+        tagline: orgData.tagline || 'Pharmaceutical Formulation & Healthcare Distribution',
+        logoType: orgData.logoType || 'preset_icon',
+        presetIconId: orgData.presetIconId || 'pill_capsule',
+        primaryColor: orgData.primaryColor || '#2563eb',
+        plan: orgData.plan || 'professional',
+        status: 'active',
+        maxReps: orgData.plan === 'enterprise' ? 25 : orgData.plan === 'professional' ? 15 : 8,
+        maxProducts: orgData.plan === 'enterprise' ? 500 : orgData.plan === 'professional' ? 200 : 100,
+        headOfficeAddress: orgData.headOfficeAddress || 'Commercial Tower, Suite 400',
+        city: orgData.city || 'Mumbai',
+        state: orgData.state || 'Maharashtra',
+        pincode: orgData.pincode || '400001',
+        contactEmail: orgData.contactEmail || currentUser?.email || 'admin@pharma.com',
+        contactPhone: orgData.contactPhone || '+91 98000 00000',
+        drugLicenseNo: orgData.drugLicenseNo || `DL-20B/21B-${slug.slice(0, 3).toUpperCase()}-2026-001`,
+        gstin: orgData.gstin || '27AAACN0000A1Z5',
+        currencySymbol: orgData.currencySymbol || '₹',
+        invoicePrefix: orgData.invoicePrefix || slug.slice(0, 3).toUpperCase(),
+        adminUserEmails: [currentUser?.email || 'admin@pharma.com'],
+        isolationLevel: 'strict_row_level',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        features: {
+          fieldTelemetry: true,
+          directChemistBilling: true,
+          sampleAuditing: true,
+          whiteLabelReporting: orgData.plan !== 'starter'
+        }
+      };
+
+      setOrganizations(prev => {
+        const updated = [...prev, newOrg];
+        localStorage.setItem('ddb_saas_organizations_v1', JSON.stringify(updated));
+        saveDocument('organizations', newOrg).catch(() => {});
+        return updated;
+      });
+
+      // Seed starter data if requested
+      if (orgData.seedStarterData !== false) {
+        const starterRepId = `rep-${slug}-1`;
+        const starterRep: SalesRep = {
+          id: starterRepId,
+          tenantId: orgId,
+          name: `Field Rep (${newOrg.name})`,
+          employeeCode: `${newOrg.invoicePrefix}-01`,
+          territory: `${newOrg.city} Territory`,
+          phone: '+91 98111 22334',
+          avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?crop=entropy&cs=srgb&fm=jpg&q=80&w=150',
+          status: 'active_in_field',
+          todayVisitsCompleted: 2,
+          todayTarget: 6,
+          monthlyTarget: 30,
+          monthlyAchieved: 14,
+          monthlyRevenueTarget: 300000,
+          monthlyRevenueAchieved: 180000,
+          currentLocationName: `${newOrg.city} Clinic Hub`,
+          batteryLevel: 95,
+          gpsSignal: 'High',
+          lastCheckinTime: '10:00 AM'
+        };
+
+        const starterProduct: Product = {
+          id: `prod-${slug}-1`,
+          tenantId: orgId,
+          name: `${newOrg.name.split(' ')[0]} Forte 500`,
+          genericName: 'Paracetamol 500mg + Caffeine 30mg',
+          packaging: '10x10 Blister',
+          form: 'Tablet',
+          mrp: 65.0,
+          pricingToStockist: 28.0,
+          pricingToRetailer: 34.0,
+          sellingRate: 40.0,
+          purchasePrice: 18.0,
+          gst: '12%',
+          company: newOrg.name,
+          category: 'General Medicine',
+          clinicalSpeciality: 'Internal Medicine',
+          stockUnits: 150,
+          reorderLevel: 50,
+          status: 'active',
+          hiddenFromRep: false,
+          batchNo: `${newOrg.invoicePrefix}-2026-01`,
+          expiryDate: '12/2027',
+          batches: [{ id: `b-${slug}-1`, batchNumber: `${newOrg.invoicePrefix}-2026-01`, expiryDate: '12/2027', stock: 150 }]
+        };
+
+        const starterDoctor: Doctor = {
+          id: `doc-${slug}-1`,
+          tenantId: orgId,
+          name: 'Dr. Vivek Sharma',
+          specialty: 'Consultant Physician',
+          clinicName: `${newOrg.city} PolyClinic`,
+          address: `Main Hospital Road, ${newOrg.city}`,
+          city: newOrg.city,
+          area: 'Central Zone',
+          phone: '+91 98222 33445',
+          bestTimeToVisit: 'Mon-Sat: 10:00 AM - 01:00 PM',
+          targetVisitsPerMonth: 4,
+          visitsCompletedThisMonth: 1,
+          avatarUrl: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?crop=entropy&cs=srgb&fm=jpg&w=150',
+          coordinates: { lat: 19.076, lng: 72.8777 },
+          status: 'pending',
+          assignedRepIds: [starterRepId]
+        };
+
+        const starterCounter: RetailCounter = {
+          id: `store-${slug}-1`,
+          tenantId: orgId,
+          name: `${newOrg.name.split(' ')[0]} Apex Chemist`,
+          type: 'retail_chemist',
+          contactPerson: 'Mukesh Gupta',
+          phone: '+91 98333 44556',
+          address: `Shop 4, Market Complex, ${newOrg.city}`,
+          area: 'Central Market',
+          city: newOrg.city || 'Mumbai',
+          territory: `${newOrg.city} Territory`,
+          assignedRepId: starterRepId,
+          assignedRepName: starterRep.name,
+          drugLicenseNo: `DL-20B-${newOrg.invoicePrefix}-99`,
+          gstin: newOrg.gstin || '27AAACN0000A1Z5',
+          productsSold: [
+            {
+              productId: starterProduct.id,
+              productName: starterProduct.name,
+              genericName: starterProduct.genericName,
+              monthlyUnitsSold: 50,
+              billingRate: 34,
+              lastOrderDate: '2026-10-01',
+              lastOrderAmount: 1700
+            }
+          ],
+          totalMonthlyRevenue: 25000,
+          creditDays: 30,
+          status: 'active'
+        };
+
+        setAllReps(prev => [starterRep, ...prev]);
+        setAllProducts(prev => [starterProduct, ...prev]);
+        setAllDoctors(prev => [starterDoctor, ...prev]);
+        setAllRetailCounters(prev => [starterCounter, ...prev]);
+        setCurrentRep(starterRep);
+      }
+
+      // Switch active tenant immediately
+      setActiveTenantId(orgId);
+      localStorage.setItem('ddb_active_tenant_id_v1', orgId);
+      setCompanyProfile(orgToCompanyProfile(newOrg));
+
+      addAuditLog(
+        'CREATE',
+        'Tenants & Organizations',
+        newOrg.name,
+        `Provisioned new SaaS organization "${newOrg.name}" (${orgId}, Plan: ${newOrg.plan.toUpperCase()}) with strict data partitioning.`,
+        undefined,
+        `Plan: ${newOrg.plan} | Reps Quota: ${newOrg.maxReps} | License: ${newOrg.drugLicenseNo}`,
+        'tenant'
+      );
+
+      return newOrg;
+    },
+    [currentUser, addAuditLog]
+  );
+
+  // Update Organization Details
+  const updateOrganization = useCallback(
+    (orgId: string, updates: Partial<Organization>) => {
+      setOrganizations(prev => {
+        const updated = prev.map(o => (o.id === orgId ? { ...o, ...updates, updatedAt: new Date().toISOString() } : o));
+        localStorage.setItem('ddb_saas_organizations_v1', JSON.stringify(updated));
+        const target = updated.find(o => o.id === orgId);
+        if (target) {
+          saveDocument('organizations', target).catch(() => {});
+          if (orgId === activeTenantId) {
+            setCompanyProfile(orgToCompanyProfile(target));
+          }
+        }
+        return updated;
+      });
+      toast.success('Organization details updated');
+    },
+    [activeTenantId]
+  );
+
+  // Delete Organization
+  const deleteOrganization = useCallback(
+    (orgId: string): boolean => {
+      if (organizations.length <= 1) {
+        toast.error('Cannot delete the last remaining organization');
+        return false;
+      }
+      const target = organizations.find(o => o.id === orgId);
+      if (!target) return false;
+
+      // If deleting active organization, switch to the first remaining one first
+      if (orgId === activeTenantId) {
+        const remaining = organizations.filter(o => o.id !== orgId);
+        switchOrganization(remaining[0].id);
+      }
+
+      setOrganizations(prev => {
+        const updated = prev.filter(o => o.id !== orgId);
+        localStorage.setItem('ddb_saas_organizations_v1', JSON.stringify(updated));
+        deleteDocument('organizations', orgId).catch(() => {});
+        return updated;
+      });
+
+      // Remove that tenant's items from state
+      setAllProducts(prev => prev.filter(p => p.tenantId !== orgId));
+      setAllDoctors(prev => prev.filter(d => d.tenantId !== orgId));
+      setAllReps(prev => prev.filter(r => r.tenantId !== orgId));
+      setAllRetailCounters(prev => prev.filter(rc => rc.tenantId !== orgId));
+      setAllVisits(prev => prev.filter(v => v.tenantId !== orgId));
+      setAllOrders(prev => prev.filter(o => o.tenantId !== orgId));
+      setAllNotifications(prev => prev.filter(n => n.tenantId !== orgId));
+      setAllAuditLogs(prev => prev.filter(l => l.tenantId !== orgId));
+
+      toast.info(`Organization "${target.name}" and its isolated partition removed`);
+      return true;
+    },
+    [organizations, activeTenantId, switchOrganization]
+  );
+
+  // Tenant quota usage stats
+  const tenantQuotaUsage = useMemo(() => {
+    return {
+      reps: {
+        current: reps.length,
+        max: activeOrganization.maxReps || 25
+      },
+      products: {
+        current: products.length,
+        max: activeOrganization.maxProducts || 500
+      },
+      planName: activeOrganization.plan
+    };
+  }, [reps.length, products.length, activeOrganization]);
 
   useEffect(() => {
-    localStorage.setItem('pharmatrack_doctors', JSON.stringify(doctors));
-  }, [doctors]);
+    localStorage.setItem('pharmatrack_doctors', JSON.stringify(allDoctors));
+  }, [allDoctors]);
 
   useEffect(() => {
-    localStorage.setItem('pharmatrack_visits', JSON.stringify(visits));
-  }, [visits]);
+    localStorage.setItem('pharmatrack_visits', JSON.stringify(allVisits));
+  }, [allVisits]);
 
   useEffect(() => {
-    localStorage.setItem('pharmatrack_orders', JSON.stringify(orders));
-  }, [orders]);
+    localStorage.setItem('pharmatrack_orders', JSON.stringify(allOrders));
+  }, [allOrders]);
 
   // 1. Firebase Authentication: ensure an authenticated session exists for security rules
   useEffect(() => {
@@ -1060,7 +1633,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       orders,
       notifications,
       users: authUsers,
-      auditLogs
+      auditLogs,
+      organizations
     }).catch(err => {
       console.warn('[Firestore] Initial data sync note:', err);
     });
@@ -1145,6 +1719,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
 
+    const unsubOrgs = subscribeToCollection<Organization>('organizations', (items) => {
+      if (items && items.length > 0) {
+        setOrganizations(items);
+      }
+    });
+
     return () => {
       unsubProducts();
       unsubDoctors();
@@ -1155,6 +1735,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubNotifs();
       unsubLogs();
       unsubUsers();
+      unsubOrgs();
     };
   }, []);
 
@@ -1190,10 +1771,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [currentUser, addAuditLog]
   );
 
-  // Inactivity Timer logic: Logs out after 15 minutes of inactivity
+  // Inactivity Timer logic: Safe 24-hour session
   const resetInactivityTimer = useCallback(() => {
     lastActivityRef.current = Date.now();
-    setRemainingSeconds(15 * 60);
+    setRemainingSeconds(Math.floor(INACTIVITY_TIMEOUT_MS / 1000));
   }, []);
 
   useEffect(() => {
@@ -1209,16 +1790,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       window.addEventListener(evt, handleUserActivity, { passive: true });
     });
 
-    // Check every second
+    // Check periodically without thrashing full-app re-renders every single second
     const interval = setInterval(() => {
       const elapsed = Date.now() - lastActivityRef.current;
       const left = Math.max(0, Math.floor((INACTIVITY_TIMEOUT_MS - elapsed) / 1000));
       setRemainingSeconds(left);
 
       if (elapsed >= INACTIVITY_TIMEOUT_MS) {
-        logout('Session expired due to 15 minutes of inactivity');
+        logout('Session expired after extended inactivity');
       }
-    }, 1000);
+    }, 30000);
 
     return () => {
       activityEvents.forEach(evt => {
@@ -1478,7 +2059,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const product: Product = {
       ...newProd,
-      id: `prod-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
+      id: `prod-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      tenantId: newProd.tenantId || activeOrganization.id
     };
 
     setProducts(prev => [product, ...prev]);
@@ -1488,13 +2070,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'CREATE',
       'Product Catalog',
       product.name,
-      `Added new formulation: ${product.name} (${product.packaging}, Company: ${product.company || 'DDB DRUG CHEM'}, MRP: ₹${product.mrp}, Rep Rate: ₹${product.sellingRate})`,
+      `Added new formulation: ${product.name} (${product.packaging}, Company: ${product.company || activeOrganization.name}, MRP: ₹${product.mrp}, Rep Rate: ₹${product.sellingRate})`,
       undefined,
-      `MRP: ₹${product.mrp} | Selling: ₹${product.sellingRate} | Purchase: ₹${product.purchasePrice} | Company: ${product.company || 'DDB DRUG CHEM'}`
+      `MRP: ₹${product.mrp} | Selling: ₹${product.sellingRate} | Purchase: ₹${product.purchasePrice} | Company: ${product.company || activeOrganization.name}`,
+      'formulation'
     );
 
     toast.success(`Product "${product.name}" added to catalog`, {
-      description: `MRP ₹${product.mrp} | Rep Rate ₹${product.sellingRate} | Company: ${product.company || 'DDB DRUG CHEM'}`
+      description: `MRP ₹${product.mrp} | Rep Rate ₹${product.sellingRate} | Company: ${product.company || activeOrganization.name}`
     });
   };
 
@@ -1503,12 +2086,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const createdProducts: Product[] = newProds.map((p, idx) => ({
       ...p,
-      id: `prod-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`
+      id: `prod-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
+      tenantId: p.tenantId || activeOrganization.id
     }));
 
     if (mode === 'replace') {
-      setProducts(createdProducts);
       batchDeleteDocuments('products', products.map(p => p.id)).catch(() => {});
+      setAllProducts(prev => [
+        ...createdProducts,
+        ...prev.filter(p => (p.tenantId || 'tenant-ddb-01') !== activeOrganization.id)
+      ]);
       batchSaveDocuments('products', createdProducts).catch(() => {});
     } else {
       setProducts(prev => [...createdProducts, ...prev]);
@@ -1911,7 +2498,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     pushUndoSnapshot(`Cleared ${deletableProducts.length} catalog items`);
 
     const idsToDelete = deletableProducts.map((p) => p.id);
-    setProducts(protectedProducts);
+    setAllProducts(prev => [
+      ...prev.filter(p => (p.tenantId || 'tenant-ddb-01') !== activeOrganization.id),
+      ...protectedProducts
+    ]);
     batchDeleteDocuments('products', idsToDelete).catch(() => {});
 
     if (protectedProducts.length > 0) {
@@ -2019,7 +2609,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       avatarUrl:
         docData.avatarUrl ||
         'https://images.unsplash.com/photo-1622253692010-333f2da6031d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHwxfHxkb2N0b3IlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODgyMzY4MDl8MA&ixlib=rb-4.1.0&q=80&w=150',
-      status: 'pending'
+      status: 'pending',
+      tenantId: activeOrganization.id
     };
     setDoctors(prev => [newDoc, ...prev]);
     saveDocument('doctors', newDoc).catch(() => {});
@@ -2048,18 +2639,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         docData.avatarUrl ||
         `https://images.unsplash.com/photo-${1622253692010 + (i % 40)}?crop=entropy&cs=srgb&fm=jpg&w=150`,
       status: docData.status || 'pending',
-      coordinates: docData.coordinates || { lat: 19.0760, lng: 72.8777 }
+      coordinates: docData.coordinates || { lat: 19.0760, lng: 72.8777 },
+      tenantId: activeOrganization.id
     }));
 
     if (mode === 'replace') {
-      setDoctors(createdDocs);
       batchDeleteDocuments('doctors', doctors.map(d => d.id)).catch(() => {});
+      setAllDoctors(prev => [
+        ...createdDocs,
+        ...prev.filter(d => (d.tenantId || 'tenant-ddb-01') !== activeOrganization.id)
+      ]);
       batchSaveDocuments('doctors', createdDocs).catch(() => {});
       addAuditLog(
         'IMPORT',
         'Doctors',
         'All Doctors Registry',
-        `Replaced entire doctor directory with ${createdDocs.length} imported physicians`
+        `Replaced doctor directory with ${createdDocs.length} imported physicians in ${activeOrganization.name}`
       );
     } else {
       setDoctors(prev => [...createdDocs, ...prev]);
@@ -2068,7 +2663,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         'IMPORT',
         'Doctors',
         `${createdDocs.length} Physicians`,
-        `Appended ${createdDocs.length} imported physicians to doctor directory`
+        `Appended ${createdDocs.length} imported physicians to doctor directory in ${activeOrganization.name}`
       );
     }
 
@@ -2101,7 +2696,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const clearAllDoctors = () => {
     if (doctors.length === 0) return;
     const idsToDelete = doctors.map(d => d.id);
-    setDoctors([]);
+    setAllDoctors(prev => prev.filter(d => (d.tenantId || 'tenant-ddb-01') !== activeOrganization.id));
     batchDeleteDocuments('doctors', idsToDelete).catch(() => {});
     localStorage.removeItem('pharmatrack_doctors');
     addAuditLog(
@@ -2136,6 +2731,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newVisit: FieldVisit = {
       ...visitData,
       id: `visit-${Date.now()}`,
+      tenantId: activeOrganization.id,
       repId: currentRep.id,
       repName: currentRep.name,
       repAvatar: currentRep.avatarUrl,
@@ -2150,6 +2746,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Real-Time Notification: Doctor Visit Logged
     addNotification({
       type: 'visit_logged',
+      tenantId: activeOrganization.id,
       title: 'New Doctor Visit Logged',
       message: `${currentRep.name} logged GPS verified chamber visit to ${visitData.doctorName} at ${visitData.clinicName} (${visitData.purpose}).`,
       repId: currentRep.id,
@@ -2171,6 +2768,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (visitData.orderValueBooked && visitData.orderValueBooked > 0) {
       const newOrder: OrderOrSampleRequest = {
         id: `ord-${Date.now()}`,
+        tenantId: activeOrganization.id,
         repId: currentRep.id,
         repName: currentRep.name,
         doctorName: visitData.doctorName,
@@ -2429,7 +3027,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newId = `counter-${Date.now()}`;
     const newCounter: RetailCounter = {
       ...counterData,
-      id: newId
+      id: newId,
+      tenantId: activeOrganization.id
     };
     setRetailCounters(prev => [newCounter, ...prev]);
     saveDocument('retail_counters', newCounter).catch(() => {});
@@ -2440,17 +3039,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       `Registered new retail counter assigned to ${newCounter.assignedRepName} (${newCounter.territory})`
     );
     toast.success(`Retail counter "${newCounter.name}" registered successfully`);
-  }, [addAuditLog]);
+  }, [addAuditLog, activeOrganization.id]);
 
   const addMultipleRetailCounters = useCallback((countersData: Omit<RetailCounter, 'id'>[], mode: 'append' | 'replace' = 'append') => {
     const timestamp = Date.now();
     const newCounters: RetailCounter[] = countersData.map((data, index) => ({
       ...data,
-      id: `counter-${timestamp}-${index}`
+      id: `counter-${timestamp}-${index}`,
+      tenantId: activeOrganization.id
     }));
 
     if (mode === 'replace') {
-      setRetailCounters(newCounters);
+      setAllRetailCounters(prev => [
+        ...newCounters,
+        ...prev.filter(rc => (rc.tenantId || 'tenant-ddb-01') !== activeOrganization.id)
+      ]);
     } else {
       setRetailCounters(prev => [...newCounters, ...prev]);
     }
@@ -2459,9 +3062,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'IMPORT',
       'Field Telemetry',
       `${newCounters.length} Medical Stores`,
-      `Bulk imported ${newCounters.length} medical stores/retail counters via Excel (${mode === 'replace' ? 'replaced existing' : 'appended'})`
+      `Bulk imported ${newCounters.length} medical stores/retail counters via Excel in ${activeOrganization.name} (${mode === 'replace' ? 'replaced existing' : 'appended'})`
     );
-  }, [addAuditLog]);
+  }, [addAuditLog, activeOrganization.id, activeOrganization.name]);
 
   const updateRetailCounter = useCallback((id: string, updates: Partial<RetailCounter>) => {
     setRetailCounters(prev => prev.map(c => (c.id === id ? { ...c, ...updates } : c)));
@@ -2484,13 +3087,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     (orderData: Omit<OrderOrSampleRequest, 'id'>) => {
       const newOrder: OrderOrSampleRequest = {
         ...orderData,
-        id: `ord-${Date.now()}`
+        id: `ord-${Date.now()}`,
+        tenantId: activeOrganization.id
       };
       setOrders(prev => [newOrder, ...prev]);
       saveDocument('orders', newOrder).catch(() => {});
 
       addNotification({
         type: 'order_submitted',
+        tenantId: activeOrganization.id,
         title: 'New Clinic Order Submitted',
         message: `${orderData.repName} submitted an order worth ₹${orderData.totalAmount.toLocaleString('en-IN')} for ${orderData.doctorName} (${orderData.clinicName}).`,
         repId: orderData.repId,
@@ -2523,6 +3128,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const visitId = `visit-${Date.now()}`;
         const newVisit: FieldVisit = {
           id: visitId,
+          tenantId: activeOrganization.id,
           repId: rep.id,
           repName: rep.name,
           repAvatar: rep.avatarUrl,
@@ -2549,6 +3155,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         addNotification({
           type: 'visit_logged',
+          tenantId: activeOrganization.id,
           title: 'New Doctor Visit Logged',
           message: `${rep.name} logged GPS verified chamber visit to ${doc.name} at ${doc.clinicName} (Product Detailing).`,
           repId: rep.id,
@@ -2571,6 +3178,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const orderId = `ord-${Date.now()}`;
         const newOrder: OrderOrSampleRequest = {
           id: orderId,
+          tenantId: activeOrganization.id,
           repId: rep.id,
           repName: rep.name,
           doctorName: doc.name,
@@ -2586,6 +3194,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         addNotification({
           type: 'order_submitted',
+          tenantId: activeOrganization.id,
           title: 'New Clinic Order Submitted',
           message: `${rep.name} booked commercial order worth ₹${orderAmount.toLocaleString('en-IN')} for ${doc.name} (${doc.clinicName}).`,
           repId: rep.id,
@@ -2615,6 +3224,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         addNotification({
           type: 'rep_status_change',
+          tenantId: activeOrganization.id,
           title: 'Sales Rep Field Check-in',
           message: `${rep.name} checked in at ${loc} (Battery: ${battery}%, GPS: High). Account active in field.`,
           repId: rep.id,
@@ -2727,7 +3337,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notificationSoundEnabled,
         setNotificationSoundEnabled,
         simulateRepLiveEvent,
-        checkAndTriggerStockAlerts
+        checkAndTriggerStockAlerts,
+        companyProfile,
+        updateCompanyProfile,
+        resetCompanyProfileToDefault,
+        organizations,
+        activeOrganization,
+        activeTenantId,
+        switchOrganization,
+        createOrganization,
+        updateOrganization,
+        deleteOrganization,
+        tenantQuotaUsage
       }}
     >
       {children}

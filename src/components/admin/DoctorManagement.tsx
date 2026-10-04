@@ -304,17 +304,17 @@ export const DoctorManagement: React.FC = () => {
 
     const matchesSearch =
       query === '' ||
-      doc.name.toLowerCase().includes(query) ||
-      doc.clinicName.toLowerCase().includes(query) ||
+      (doc.name || '').toLowerCase().includes(query) ||
+      (doc.clinicName || '').toLowerCase().includes(query) ||
       (doc.city && doc.city.toLowerCase().includes(query)) ||
-      doc.area.toLowerCase().includes(query) ||
-      doc.specialty.toLowerCase().includes(query) ||
+      (doc.area || '').toLowerCase().includes(query) ||
+      (doc.specialty || '').toLowerCase().includes(query) ||
       (pharmacyName && pharmacyName.toLowerCase().includes(query)) ||
       (doc.attachedHospitalName && doc.attachedHospitalName.toLowerCase().includes(query)) ||
       (doc.attachedClinicName && doc.attachedClinicName.toLowerCase().includes(query)) ||
       (linkedStore?.hospitalName && linkedStore.hospitalName.toLowerCase().includes(query)) ||
       (linkedStore?.clinicName && linkedStore.clinicName.toLowerCase().includes(query)) ||
-      (doc.targetedProducts && doc.targetedProducts.some((p) => p.toLowerCase().includes(query))) ||
+      (Array.isArray(doc.targetedProducts) && doc.targetedProducts.some((p) => (p || '').toLowerCase().includes(query))) ||
       (doc.adminRemarks && doc.adminRemarks.toLowerCase().includes(query));
 
     return matchesSpecialty && matchesCity && matchesPharmacy && matchesSearch;

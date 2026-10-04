@@ -11,6 +11,8 @@ import { AuditHistory } from './components/admin/AuditHistory';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { SalesRepReports } from './components/admin/SalesRepReports';
 import { MedicalStoreManagement } from './components/admin/MedicalStoreManagement';
+import { CompanyProfileBranding } from './components/admin/CompanyProfileBranding';
+import { TenantsManagement } from './components/admin/TenantsManagement';
 import { RepMobileView } from './components/rep/RepMobileView';
 import { PhotoModal } from './components/PhotoModal';
 import { SignedOutPage } from './components/SignedOutPage';
@@ -62,6 +64,10 @@ const AppContent: React.FC = () => {
               return <OrdersApprovals />;
             case 'history':
               return <AuditHistory />;
+            case 'company':
+              return <CompanyProfileBranding />;
+            case 'tenants':
+              return <TenantsManagement />;
             default:
               return <AdminDashboard />;
           }
@@ -117,8 +123,10 @@ const AppContent: React.FC = () => {
 
 export default function App() {
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <ErrorBoundary fallbackTitle="Application Viewport Restored">
+      <AppProvider>
+        <AppContent />
+      </AppProvider>
+    </ErrorBoundary>
   );
 }

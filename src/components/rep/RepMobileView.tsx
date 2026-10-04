@@ -27,7 +27,8 @@ export const RepMobileView: React.FC = () => {
     currentRep,
     canGoBack,
     goBack,
-    previousScreenName
+    previousScreenName,
+    companyProfile
   } = useApp();
 
   const navTabs = [
@@ -96,7 +97,7 @@ export const RepMobileView: React.FC = () => {
           <div>
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-slate-900 text-sm font-heading">
-                DDB DRUG CHEM
+                {companyProfile?.name || 'DDB DRUG CHEM'}
               </span>
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             </div>

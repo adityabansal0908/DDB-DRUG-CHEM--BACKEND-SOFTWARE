@@ -47,7 +47,7 @@ import * as XLSX from 'xlsx';
 type DatePreset = 'current_month' | 'last_month' | 'last_30_days' | 'quarter_3' | 'custom';
 
 export const SalesRepReports: React.FC = () => {
-  const { reps, visits, orders, products, doctors, setPreviewPhotoUrl, canGoBack, goBack, previousScreenName } = useApp();
+  const { reps, visits, orders, products, doctors, setPreviewPhotoUrl, canGoBack, goBack, previousScreenName, companyProfile } = useApp();
 
   // Selection states
   const [selectedRepId, setSelectedRepId] = useState<string>('all');
@@ -87,7 +87,8 @@ export const SalesRepReports: React.FC = () => {
         },
         orders: filteredOrders,
         visits: filteredVisits,
-        productContributions: productContributionData
+        productContributions: productContributionData,
+        companyProfile
       });
 
       const fileName = getPdfFileName();
@@ -183,11 +184,11 @@ export const SalesRepReports: React.FC = () => {
 
       // Search query filter
       if (searchTerm.trim()) {
-        const q = searchTerm.toLowerCase();
-        const matchDoctor = v.doctorName.toLowerCase().includes(q);
-        const matchClinic = v.clinicName.toLowerCase().includes(q);
-        const matchRep = v.repName.toLowerCase().includes(q);
-        const matchProducts = v.productsDiscussed?.some(p => p.toLowerCase().includes(q));
+        const q = searchTerm.toLowerCase().trim();
+        const matchDoctor = (v.doctorName || '').toLowerCase().includes(q);
+        const matchClinic = (v.clinicName || '').toLowerCase().includes(q);
+        const matchRep = (v.repName || '').toLowerCase().includes(q);
+        const matchProducts = v.productsDiscussed?.some(p => (p || '').toLowerCase().includes(q));
         if (!matchDoctor && !matchClinic && !matchRep && !matchProducts) return false;
       }
 
@@ -207,11 +208,11 @@ export const SalesRepReports: React.FC = () => {
 
       // Search query filter
       if (searchTerm.trim()) {
-        const q = searchTerm.toLowerCase();
-        const matchDoctor = o.doctorName.toLowerCase().includes(q);
-        const matchClinic = o.clinicName.toLowerCase().includes(q);
-        const matchRep = o.repName.toLowerCase().includes(q);
-        const matchItems = o.items?.some(i => i.productName.toLowerCase().includes(q));
+        const q = searchTerm.toLowerCase().trim();
+        const matchDoctor = (o.doctorName || '').toLowerCase().includes(q);
+        const matchClinic = (o.clinicName || '').toLowerCase().includes(q);
+        const matchRep = (o.repName || '').toLowerCase().includes(q);
+        const matchItems = o.items?.some(i => (i?.productName || '').toLowerCase().includes(q));
         if (!matchDoctor && !matchClinic && !matchRep && !matchItems) return false;
       }
 
@@ -326,7 +327,7 @@ export const SalesRepReports: React.FC = () => {
 
     // Sheet 1: Executive Summary
     const summaryData = [
-      ['PHARMATRACK / DDB DRUG CHEM - SALES PERFORMANCE REPORT'],
+      [`${(companyProfile.name || 'DDB DRUG CHEM').toUpperCase()} - SALES PERFORMANCE REPORT`],
       ['Generated On', new Date().toLocaleString('en-IN')],
       ['Target Sales Rep', selectedRep ? `${selectedRep.name} (${selectedRep.employeeCode})` : 'All Sales Representatives (Consolidated)'],
       ['Territory', selectedRep ? selectedRep.territory : 'Pan-Territory Coverage'],

@@ -986,7 +986,11 @@ export const ProductManagement: React.FC = () => {
           {products.length > 0 && (
             <button
               onClick={() => {
-                if (window.confirm('Are you sure you want to clear all products from the catalog?')) {
+                try {
+                  if (typeof window !== 'undefined' && window.confirm && window.confirm('Are you sure you want to clear all products from the catalog?')) {
+                    clearAllProducts();
+                  }
+                } catch {
                   clearAllProducts();
                 }
               }}

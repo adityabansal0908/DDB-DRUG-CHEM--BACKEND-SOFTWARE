@@ -3,6 +3,8 @@ import {
   doc,
   getDocs,
   getDoc,
+  getDocFromServer,
+  getCountFromServer,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -15,6 +17,7 @@ import {
   Unsubscribe
 } from 'firebase/firestore';
 import { db } from './firebase';
+import firebaseConfig from '../../firebase-applet-config.json';
 
 /**
  * Strips undefined values from objects recursively because Firestore rejects undefined.
@@ -229,6 +232,7 @@ export async function migrateAndSeedFirestore(sources: {
   notifications: { id: string; [key: string]: any }[];
   users: { id: string; [key: string]: any }[];
   auditLogs: { id: string; [key: string]: any }[];
+  organizations?: { id: string; [key: string]: any }[];
 }): Promise<void> {
   const collectionsToSeed = [
     { name: 'products', data: sources.products },
@@ -239,7 +243,8 @@ export async function migrateAndSeedFirestore(sources: {
     { name: 'orders', data: sources.orders },
     { name: 'notifications', data: sources.notifications },
     { name: 'users', data: sources.users },
-    { name: 'audit_logs', data: sources.auditLogs }
+    { name: 'audit_logs', data: sources.auditLogs },
+    { name: 'organizations', data: sources.organizations || [] }
   ];
 
   for (const item of collectionsToSeed) {
@@ -253,5 +258,152 @@ export async function migrateAndSeedFirestore(sources: {
       console.warn(`[Firestore] Could not verify/seed "${item.name}":`, err);
     }
   }
+}
+
+export interface FirestoreConnectionResult {
+  connected: boolean;
+  latencyMs: number;
+  databaseId: string;
+  projectId: string;
+  error?: string;
+  consoleUrl: string;
+}
+
+/**
+ * Validates connection directly with the Google Cloud Firestore server.
+ * Uses getDocFromServer as mandated by the Firebase Skill.
+ */
+export async function testFirestoreConnection(): Promise<FirestoreConnectionResult> {
+  const databaseId = firebaseConfig.firestoreDatabaseId || '(default)';
+  const projectId = firebaseConfig.projectId;
+  const consoleUrl = `https://console.firebase.google.com/project/${projectId}/firestore/databases/${databaseId}/data`;
+
+  const startTime = performance.now();
+  try {
+    // Attempt ping to Firestore connection test document
+    await getDocFromServer(doc(db, 'test', 'connection'));
+    const latencyMs = Math.round(performance.now() - startTime);
+    return {
+      connected: true,
+      latencyMs,
+      databaseId,
+      projectId,
+      consoleUrl
+    };
+  } catch (error) {
+    const latencyMs = Math.round(performance.now() - startTime);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    
+    // In Firestore, if a document doesn't exist, getDocFromServer succeeds with snapshot.exists() === false.
+    // An error is only thrown on actual network/offline or security rule rejection.
+    // If the error is permission-denied or offline, report it accurately.
+    if (errorMsg.includes('the client is offline')) {
+      return {
+        connected: false,
+        latencyMs,
+        databaseId,
+        projectId,
+        error: 'Client is offline. Please check your internet connection or Firebase setup.',
+        consoleUrl
+      };
+    }
+
+    // If permission or other non-fatal test doc error, test with a public collection read check
+    try {
+      const q = query(collection(db, 'products'), limit(1));
+      await getDocs(q);
+      return {
+        connected: true,
+        latencyMs: Math.round(performance.now() - startTime),
+        databaseId,
+        projectId,
+        consoleUrl
+      };
+    } catch (fallbackError) {
+      return {
+        connected: false,
+        latencyMs,
+        databaseId,
+        projectId,
+        error: errorMsg,
+        consoleUrl
+      };
+    }
+  }
+}
+
+export interface CollectionStat {
+  name: string;
+  count: number;
+  status: 'synced' | 'empty';
+}
+
+/**
+ * Retrieves live document counts directly from Firestore server for key collections.
+ */
+export async function getFirestoreLiveStatus(): Promise<{
+  connected: boolean;
+  databaseId: string;
+  projectId: string;
+  consoleUrl: string;
+  collections: CollectionStat[];
+}> {
+  const databaseId = firebaseConfig.firestoreDatabaseId || '(default)';
+  const projectId = firebaseConfig.projectId;
+  const consoleUrl = `https://console.firebase.google.com/project/${projectId}/firestore/databases/${databaseId}/data`;
+
+  const collectionNames = [
+    'products',
+    'doctors',
+    'sales_reps',
+    'retail_counters',
+    'field_visits',
+    'orders',
+    'organizations',
+    'audit_logs',
+    'notifications'
+  ];
+
+  const results: CollectionStat[] = [];
+  let isConnected = true;
+
+  for (const name of collectionNames) {
+    try {
+      const colRef = collection(db, name);
+      const snapshot = await getCountFromServer(colRef);
+      const count = snapshot.data().count;
+      results.push({
+        name,
+        count,
+        status: count > 0 ? 'synced' : 'empty'
+      });
+    } catch {
+      // Fallback with regular getDocs if count aggregation is restricted
+      try {
+        const q = query(collection(db, name), limit(50));
+        const snap = await getDocs(q);
+        results.push({
+          name,
+          count: snap.size,
+          status: snap.size > 0 ? 'synced' : 'empty'
+        });
+      } catch {
+        isConnected = false;
+        results.push({
+          name,
+          count: 0,
+          status: 'empty'
+        });
+      }
+    }
+  }
+
+  return {
+    connected: isConnected,
+    databaseId,
+    projectId,
+    consoleUrl,
+    collections: results
+  };
 }
 

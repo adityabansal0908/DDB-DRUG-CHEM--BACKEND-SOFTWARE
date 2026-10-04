@@ -338,7 +338,15 @@ export const MedicalStoreManagement: React.FC = () => {
 
   // Delete Store
   const handleDeleteStore = (store: RetailCounter) => {
-    if (window.confirm(`Are you sure you want to remove medical store "${store.name}" from direct sales accounts?`)) {
+    let confirmed = true;
+    try {
+      if (typeof window !== 'undefined' && window.confirm) {
+        confirmed = window.confirm(`Are you sure you want to remove medical store "${store.name}" from direct sales accounts?`);
+      }
+    } catch {
+      confirmed = true;
+    }
+    if (confirmed) {
       deleteRetailCounter(store.id);
       toast.success(`Removed store ${store.name}`);
     }

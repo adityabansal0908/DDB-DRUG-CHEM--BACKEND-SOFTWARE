@@ -32,13 +32,14 @@ export const OrdersApprovals: React.FC = () => {
   // Filtered orders
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
+      const term = (searchTerm || '').toLowerCase().trim();
       const matchesSearch =
-        !searchTerm.trim() ||
-        order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.doctorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.clinicName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.repName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.items.some((i) => i.productName.toLowerCase().includes(searchTerm.toLowerCase()));
+        !term ||
+        (order.id || '').toLowerCase().includes(term) ||
+        (order.doctorName || '').toLowerCase().includes(term) ||
+        (order.clinicName || '').toLowerCase().includes(term) ||
+        (order.repName || '').toLowerCase().includes(term) ||
+        (Array.isArray(order.items) && order.items.some((i) => (i?.productName || '').toLowerCase().includes(term)));
 
       const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
       const matchesType = typeFilter === 'all' || order.type === typeFilter;

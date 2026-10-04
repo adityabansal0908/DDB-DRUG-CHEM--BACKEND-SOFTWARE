@@ -196,6 +196,21 @@
         "previousStateSnippet": { "type": "string", "required": false },
         "newStateSnippet": { "type": "string", "required": false }
       }
+    },
+    "Organization": {
+      "collection": "organizations",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "name": { "type": "string", "required": true },
+        "slug": { "type": "string", "required": true },
+        "legalName": { "type": "string", "required": false },
+        "tagline": { "type": "string", "required": false },
+        "plan": { "type": "string", "required": true },
+        "status": { "type": "string", "required": true },
+        "primaryColor": { "type": "string", "required": false },
+        "drugLicenseNo": { "type": "string", "required": false },
+        "gstin": { "type": "string", "required": false }
+      }
     }
   }
 }

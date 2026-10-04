@@ -15,7 +15,7 @@ import {
 } from '@phosphor-icons/react';
 
 export const SignedOutPage: React.FC = () => {
-  const { login, register } = useApp();
+  const { login, register, companyProfile } = useApp();
 
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
@@ -143,7 +143,7 @@ export const SignedOutPage: React.FC = () => {
             data-testid="brand-header-title"
             className="text-white font-extrabold text-base sm:text-lg tracking-wider font-heading uppercase"
           >
-            DDB DRUG CHEM
+            {companyProfile?.name || 'DDB DRUG CHEM'}
           </span>
         </div>
 

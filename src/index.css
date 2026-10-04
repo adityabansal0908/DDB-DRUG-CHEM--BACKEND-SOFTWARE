@@ -6,10 +6,28 @@
     --font-sans: 'Manrope', sans-serif;
   }
 
+  html {
+    min-height: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background-color: #F8FAFC;
     color: #0F172A;
+    min-height: 100vh;
+  }
+
+  #root {
+    min-height: 100vh;
+    width: 100%;
+  }
+
+  /* Prevent mobile browsers (especially iOS Safari) from automatically zooming in and displacing viewport when an input is tapped */
+  @media screen and (max-width: 767px) {
+    input, textarea, select {
+      font-size: 16px !important;
+    }
   }
 
   h1, h2, h3, h4, h5, h6 {

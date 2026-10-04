@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { SalesRep, OrderOrSampleRequest, FieldVisit } from '../types';
+import { SalesRep, OrderOrSampleRequest, FieldVisit, CompanyProfile } from '../types';
 
 interface ProductContribution {
   name: string;
@@ -25,6 +25,7 @@ interface GenerateReportPDFParams {
   orders: OrderOrSampleRequest[];
   visits: FieldVisit[];
   productContributions: ProductContribution[];
+  companyProfile?: CompanyProfile;
 }
 
 export function generateSalesRepReportPDF({
@@ -33,7 +34,8 @@ export function generateSalesRepReportPDF({
   metrics,
   orders,
   visits,
-  productContributions
+  productContributions,
+  companyProfile
 }: GenerateReportPDFParams): jsPDF {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -72,14 +74,16 @@ export function generateSalesRepReportPDF({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
   doc.setTextColor(...secondaryColor);
-  doc.text('DDB DRUG CHEM & PHARMACEUTICALS', margin, currentY);
+  const companyTitle = companyProfile?.legalName || companyProfile?.name || 'DDB DRUG CHEM & PHARMACEUTICALS';
+  doc.text(companyTitle, margin, currentY);
 
   // Subtitle
   currentY += 5;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(100, 116, 139);
-  doc.text('Territory Sales Operations & Representative Field Performance Audit', margin, currentY);
+  const companySubtitle = companyProfile?.tagline || 'Territory Sales Operations & Representative Field Performance Audit';
+  doc.text(companySubtitle, margin, currentY);
 
   // Right-aligned Generation Date
   doc.setFontSize(8);

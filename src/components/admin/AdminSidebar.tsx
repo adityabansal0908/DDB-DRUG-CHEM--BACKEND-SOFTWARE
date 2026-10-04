@@ -15,7 +15,9 @@ import {
   ClockCounterClockwise,
   SquaresFour,
   FileText,
-  Storefront
+  Storefront,
+  Buildings,
+  GlobeHemisphereWest
 } from '@phosphor-icons/react';
 
 export const AdminSidebar: React.FC = () => {
@@ -29,6 +31,7 @@ export const AdminSidebar: React.FC = () => {
     doctors,
     retailCounters,
     auditLogs,
+    organizations,
     isSidebarCollapsed,
     setIsSidebarCollapsed
   } = useApp();
@@ -99,6 +102,20 @@ export const AdminSidebar: React.FC = () => {
       icon: ClockCounterClockwise,
       badge: `${auditLogs.length}`,
       badgeColor: 'bg-purple-100 text-purple-800 font-bold border border-purple-200'
+    },
+    {
+      id: 'company' as const,
+      label: 'Company & Branding',
+      icon: GlobeHemisphereWest,
+      badge: 'SaaS',
+      badgeColor: 'bg-blue-100 text-blue-800 font-bold border border-blue-200'
+    },
+    {
+      id: 'tenants' as const,
+      label: 'Multi-Tenant Orgs',
+      icon: Buildings,
+      badge: `${organizations.length} Orgs`,
+      badgeColor: 'bg-indigo-100 text-indigo-800 font-bold border border-indigo-200'
     }
   ];
 

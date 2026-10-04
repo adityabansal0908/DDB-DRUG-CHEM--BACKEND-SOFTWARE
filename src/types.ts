@@ -1,11 +1,55 @@
 export type UserRole = 'admin' | 'sales_rep';
 
+export type TenantPlan = 'starter' | 'professional' | 'enterprise';
+
+export interface Organization {
+  id: string; // Tenant identifier e.g. "tenant-ddb-01", "tenant-apex-02"
+  name: string; // Trading / Brand display name (e.g. "DDB DRUG CHEM")
+  slug: string; // URL / code slug (e.g. "ddb-drugchem")
+  legalName?: string; // Registered entity legal name
+  tagline?: string;
+  logoUrl?: string;
+  logoType?: 'custom_image' | 'preset_icon' | 'monogram';
+  presetIconId?: string;
+  primaryColor: string; // Accent color (e.g. "#2563eb")
+  plan: TenantPlan;
+  status: 'active' | 'trial' | 'suspended';
+  maxReps: number;
+  maxProducts: number;
+  headOfficeAddress?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  contactEmail: string;
+  contactPhone?: string;
+  website?: string;
+  drugLicenseNo?: string;
+  gstin?: string;
+  panNo?: string;
+  cin?: string;
+  fssaiLicenseNo?: string;
+  currencySymbol?: string;
+  invoicePrefix?: string;
+  adminUserEmails: string[];
+  isolationLevel: 'strict_row_level' | 'tenant_isolated';
+  createdAt: string;
+  updatedAt: string;
+  features?: {
+    fieldTelemetry?: boolean;
+    directChemistBilling?: boolean;
+    sampleAuditing?: boolean;
+    whiteLabelReporting?: boolean;
+  };
+}
+
 export interface AuthUser {
   id: string;
   email: string;
   name: string;
   role: UserRole;
   repId?: string; // Links to sales rep profile if role is 'sales_rep'
+  tenantId?: string; // Links user to their isolated organization
+  accessibleTenantIds?: string[]; // Tenants this user has authorization to access/switch
   avatarUrl?: string;
   avatarType?: 'image' | 'monogram';
   isOnline: boolean;
@@ -15,18 +59,29 @@ export interface AuthUser {
 
 export interface AuditLog {
   id: string;
+  tenantId?: string; // Tenant isolation key
   timestamp: string; // ISO string
   formattedTime: string; // e.g. "Today, 02:45 PM"
   userEmail: string;
   userName: string;
   userRole: UserRole;
-  actionType: 'CREATE' | 'UPDATE' | 'DELETE' | 'IMPORT' | 'UNDO' | 'CLEAR' | 'LOGIN' | 'LOGOUT';
-  module: 'Product Catalog' | 'Doctors' | 'Authentication' | 'Field Visits' | 'Orders' | 'Field Telemetry';
+  actionType: 'CREATE' | 'UPDATE' | 'DELETE' | 'IMPORT' | 'UNDO' | 'CLEAR' | 'LOGIN' | 'LOGOUT' | 'TENANT_SWITCH';
+  module:
+    | 'Product Catalog'
+    | 'Doctors'
+    | 'Authentication'
+    | 'Field Visits'
+    | 'Orders'
+    | 'Field Telemetry'
+    | 'Company Profile & Branding'
+    | 'Medical Stores'
+    | 'Tenants & Organizations'
+    | 'Multi-Tenancy';
   targetItemName: string;
   details: string; // Plain summary of what was changed
   previousStateSnippet?: string; // Optional diff context
   newStateSnippet?: string;
-  changeCategory?: 'stock' | 'pricing' | 'formulation' | 'general';
+  changeCategory?: 'stock' | 'pricing' | 'formulation' | 'general' | 'tenant';
   fieldDiffs?: {
     field: string;
     label: string;
@@ -46,6 +101,7 @@ export interface ProductBatch {
 
 export interface Product {
   id: string;
+  tenantId?: string; // Multi-tenancy isolation key (e.g. "tenant-ddb-01")
   name: string; // Column 1: Product Name
   genericName: string; // Column 2: Salt Name/ Composition
   packaging: string; // Column 3: Packaging (e.g. 10x10 Tablets, 100ml)
@@ -216,6 +272,7 @@ export interface DoctorVisitingSlot {
 
 export interface Doctor {
   id: string;
+  tenantId?: string; // Multi-tenancy isolation key
   name: string;
   specialty: string;
   clinicName: string;
@@ -249,6 +306,37 @@ export interface Doctor {
   attachedClinicName?: string;
 }
 
+export interface CompanyProfile {
+  id: string; // Tenant identifier e.g. "tenant-ddb-01"
+  name: string; // Trading / Brand display name (e.g. "DDB DRUG CHEM")
+  legalName?: string; // Registered corporate entity name
+  tagline: string; // Official brand tagline or mission
+  logoUrl?: string; // Custom uploaded brand logo URL or base64
+  logoType?: 'custom_image' | 'preset_icon' | 'monogram';
+  presetIconId?: string; // 'pill_capsule' | 'medical_cross' | 'caduceus' | 'molecule' | 'flask'
+  primaryColor?: string; // Brand accent hex color (e.g. "#2563eb")
+  drugLicenseNo: string; // Form 20B/21B Wholesale & Distribution license
+  gstin: string; // Goods and Services Tax Identification Number
+  panNo?: string; // Permanent Account Number
+  cin?: string; // Corporate Identity Number (e.g. U24239MH2021PTC362145)
+  fssaiLicenseNo?: string; // Food Safety & Standards License (for nutraceuticals)
+  headOfficeAddress: string;
+  city: string;
+  state: string;
+  pincode: string;
+  contactEmail: string;
+  contactPhone: string;
+  website?: string;
+  invoicePrefix?: string; // Prefix for direct store invoices (e.g. "DDB")
+  currencySymbol?: string;
+  footerDisclaimer?: string; // Standard invoice & PO legal terms / disclaimers
+  status?: 'active' | 'trial' | 'suspended';
+  maxRepsAllowed?: number;
+  planName?: string;
+  foundedYear?: string;
+  updatedAt?: string;
+}
+
 export type AdminTabKey =
   | 'dashboard'
   | 'monitoring'
@@ -258,7 +346,9 @@ export type AdminTabKey =
   | 'reps'
   | 'orders'
   | 'reports'
-  | 'history';
+  | 'history'
+  | 'company'
+  | 'tenants';
 
 export type RepTabKey = 'route' | 'checkin' | 'catalog' | 'activity';
 
@@ -272,6 +362,7 @@ export interface NavigationScreen {
 
 export interface FieldVisit {
   id: string;
+  tenantId?: string; // Multi-tenancy isolation key
   repId: string;
   repName: string;
   repAvatar: string;
@@ -296,6 +387,7 @@ export interface FieldVisit {
 
 export interface SalesRep {
   id: string;
+  tenantId?: string; // Multi-tenancy isolation key
   name: string;
   employeeCode: string;
   territory: string;
@@ -319,6 +411,7 @@ export interface SalesRep {
 
 export interface RetailCounter {
   id: string;
+  tenantId?: string; // Multi-tenancy isolation key
   name: string;
   type: 'retail_chemist' | 'wholesale_chemist' | 'hospital_pharmacy' | 'clinic_counter' | 'chain_pharmacy';
   contactPerson: string;
@@ -359,6 +452,7 @@ export interface RetailCounter {
 
 export interface OrderOrSampleRequest {
   id: string;
+  tenantId?: string; // Multi-tenancy isolation key
   repId: string;
   repName: string;
   doctorName: string;
@@ -391,6 +485,7 @@ export type NotificationType =
 
 export interface AdminNotification {
   id: string;
+  tenantId?: string; // Multi-tenancy isolation key
   type: NotificationType;
   title: string;
   message: string;
