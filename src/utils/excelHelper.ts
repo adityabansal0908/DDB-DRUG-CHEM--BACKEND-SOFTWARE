@@ -459,6 +459,151 @@ export const downloadExcelTemplate = () => {
   XLSX.writeFile(wb, 'DDB_DRUG_CHEM_Product_Catalogue_Template.xlsx');
 };
 
+export interface ProductExportOptions {
+  format?: 'xlsx' | 'csv';
+  includePricing?: boolean;
+  includeInventory?: boolean;
+  includeBatches?: boolean;
+}
+
+/**
+ * Advanced product catalogue dataset exporter supporting Excel (.xlsx) and CSV (.csv)
+ * with configurable field sets and column formatting.
+ */
+export const exportProductDataset = (
+  productsToExport: Product[],
+  options: ProductExportOptions = {},
+  filename?: string
+): string => {
+  const {
+    format = 'xlsx',
+    includePricing = true,
+    includeInventory = true,
+    includeBatches = true
+  } = options;
+
+  const headers: string[] = [
+    'Product Name',
+    'Salt Name / Composition',
+    'Packaging',
+    'Dosage form',
+    'MRP (INR)'
+  ];
+
+  if (includePricing) {
+    headers.push(
+      'Pricing to Stockist (PTS)',
+      'Pricing to Retailer (PTR)',
+      'Selling Price (Rep Rate)',
+      'Purchase Price',
+      'GST Rate'
+    );
+  }
+
+  headers.push(
+    'Company / Manufacturer',
+    'Category',
+    'Clinical Speciality'
+  );
+
+  if (includeInventory) {
+    headers.push(
+      'Stock Units',
+      'Safety Reorder Level',
+      'High Demand',
+      'Inventory Status'
+    );
+  }
+
+  if (includeBatches) {
+    headers.push('Batch No', 'Expiry Date');
+  }
+
+  const rows = productsToExport.map((p) => {
+    const row: any[] = [
+      p.name,
+      p.genericName || p.name,
+      p.packaging || '10x10 Tablets',
+      p.form || 'Tablet',
+      Number(p.mrp) || 0
+    ];
+
+    if (includePricing) {
+      row.push(
+        p.pricingToStockist !== undefined && p.pricingToStockist !== null && Number(p.pricingToStockist) > 0
+          ? Number(p.pricingToStockist)
+          : '',
+        p.pricingToRetailer !== undefined && p.pricingToRetailer !== null && Number(p.pricingToRetailer) > 0
+          ? Number(p.pricingToRetailer)
+          : '',
+        p.sellingRate !== undefined && p.sellingRate !== null && Number(p.sellingRate) > 0
+          ? Number(p.sellingRate)
+          : '',
+        p.purchasePrice !== undefined && p.purchasePrice !== null && Number(p.purchasePrice) > 0
+          ? Number(p.purchasePrice)
+          : '',
+        formatGst(p.gst)
+      );
+    }
+
+    row.push(
+      p.company || 'DDB DRUG CHEM',
+      p.category && p.category.trim() && p.category.trim() !== '-' ? p.category.trim() : '',
+      p.clinicalSpeciality && p.clinicalSpeciality.trim() && p.clinicalSpeciality.trim() !== '-' ? p.clinicalSpeciality.trim() : ''
+    );
+
+    if (includeInventory) {
+      const stock = p.stockUnits ?? 0;
+      const reorder = p.reorderLevel ?? 500;
+      const statusLabel = stock === 0 ? 'Out of Stock' : stock < reorder ? 'Low Stock' : 'Active Stock';
+      row.push(
+        stock,
+        reorder,
+        p.isHighDemand ? 'YES' : 'NO',
+        statusLabel
+      );
+    }
+
+    if (includeBatches) {
+      const batchNoStr = p.batches && p.batches.length > 0
+        ? p.batches.map(b => b.batchNumber).join(', ')
+        : (p.batchNo || 'STD-BATCH');
+      const expiryStr = p.batches && p.batches.length > 0
+        ? p.batches.map(b => b.expiryDate).join(', ')
+        : (p.expiryDate || '12/2028');
+      row.push(batchNoStr, expiryStr);
+    }
+
+    return row;
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+  // Set friendly column widths
+  ws['!cols'] = headers.map(h => {
+    if (h.includes('Product Name') || h.includes('Company')) return { wch: 25 };
+    if (h.includes('Salt Name')) return { wch: 45 };
+    if (h.includes('Packaging') || h.includes('Speciality') || h.includes('Category')) return { wch: 20 };
+    return { wch: 15 };
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Product Catalog');
+
+  const ext = format === 'csv' ? 'csv' : 'xlsx';
+  const finalFilename = filename
+    ? (filename.endsWith(`.${ext}`) ? filename : `${filename}.${ext}`)
+    : `DDB_DRUG_CHEM_Product_Catalog_${productsToExport.length}_Items_${new Date().toISOString().slice(0, 10)}.${ext}`;
+
+  if (format === 'csv') {
+    XLSX.writeFile(wb, finalFilename, { bookType: 'csv' });
+  } else {
+    XLSX.writeFile(wb, finalFilename, { bookType: 'xlsx' });
+  }
+
+  return finalFilename;
+};
+
 /**
  * Export an array of Products to an Excel spreadsheet file (.xlsx)
  */
@@ -466,66 +611,10 @@ export const exportProductsToExcel = (
   productsToExport: Product[],
   filename: string = 'DDB_DRUG_CHEM_Products_Export.xlsx'
 ) => {
-  const headers = [
-    'Product Name',
-    'Salt Name / Composition',
-    'Packaging',
-    'Dosage form',
-    'MRP',
-    'Pricing to Stockist',
-    'Pricing to Retailer',
-    'Selling Price',
-    'Purchase Price',
-    'GST',
-    'Company',
-    'Category',
-    'Clinical Speciality'
-  ];
-
-  const rows = productsToExport.map((p) => [
-    p.name,
-    p.genericName || p.name,
-    p.packaging || '10x10 Tablets',
-    p.form || 'Tablet',
-    Number(p.mrp) || 0,
-    p.pricingToStockist !== undefined && p.pricingToStockist !== null && Number(p.pricingToStockist) > 0
-      ? Number(p.pricingToStockist)
-      : '',
-    p.pricingToRetailer !== undefined && p.pricingToRetailer !== null && Number(p.pricingToRetailer) > 0
-      ? Number(p.pricingToRetailer)
-      : '',
-    p.sellingRate !== undefined && p.sellingRate !== null && Number(p.sellingRate) > 0
-      ? Number(p.sellingRate)
-      : '',
-    p.purchasePrice !== undefined && p.purchasePrice !== null && Number(p.purchasePrice) > 0
-      ? Number(p.purchasePrice)
-      : '',
-    formatGst(p.gst),
-    p.company || 'DDB DRUG CHEM',
-    p.category && p.category.trim() && p.category.trim() !== '-' ? p.category.trim() : '',
-    p.clinicalSpeciality && p.clinicalSpeciality.trim() && p.clinicalSpeciality.trim() !== '-' ? p.clinicalSpeciality.trim() : ''
-  ]);
-
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-
-  ws['!cols'] = [
-    { wch: 24 }, // Product Name
-    { wch: 45 }, // Salt Name
-    { wch: 18 }, // Packaging
-    { wch: 14 }, // Dosage form
-    { wch: 12 }, // MRP
-    { wch: 18 }, // Pricing to Stockist
-    { wch: 18 }, // Pricing to Retailer
-    { wch: 14 }, // Selling Price
-    { wch: 14 }, // Purchase Price
-    { wch: 10 }, // GST
-    { wch: 26 }, // Company
-    { wch: 18 }, // Category
-    { wch: 22 }  // Clinical Speciality
-  ];
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Catalog Formulations');
-  XLSX.writeFile(wb, filename);
+  return exportProductDataset(
+    productsToExport,
+    { format: 'xlsx', includePricing: true, includeInventory: true, includeBatches: true },
+    filename
+  );
 };
 

@@ -36,7 +36,7 @@ export const ProductExpiryTracker: React.FC<ProductExpiryTrackerProps> = ({
   activeFilterUrgency,
   onFilterChange
 }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [trackerTab, setTrackerTab] = useState<'batches' | 'summary'>('batches');
 
   const metrics = useMemo(() => aggregateCatalogExpiryMetrics(products), [products]);
@@ -75,10 +75,14 @@ export const ProductExpiryTracker: React.FC<ProductExpiryTrackerProps> = ({
     <div
       id="product-expiry-tracker-panel"
       data-testid="product-expiry-tracker-panel"
-      className="bg-gradient-to-br from-amber-50/90 via-orange-50/50 to-white border-2 border-amber-300/90 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4"
+      className={`bg-gradient-to-br from-amber-50/90 via-orange-50/50 to-white border-2 border-amber-300/90 rounded-2xl shadow-xs transition-all ${
+        isExpanded ? 'p-4 sm:p-5 space-y-4' : 'p-3.5 sm:p-4'
+      }`}
     >
       {/* Tracker Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/80 pb-3.5">
+      <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+        isExpanded ? 'border-b border-amber-200/80 pb-3.5' : ''
+      }`}>
         <div className="flex items-start sm:items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-xs">
             <HourglassMedium size={22} weight="fill" />

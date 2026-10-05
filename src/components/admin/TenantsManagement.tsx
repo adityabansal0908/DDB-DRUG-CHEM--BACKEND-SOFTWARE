@@ -41,7 +41,8 @@ export const TenantsManagement: React.FC = () => {
     orders,
     retailCounters,
     currentUser,
-    tenantQuotaUsage
+    tenantQuotaUsage,
+    setActiveAdminTab
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -269,19 +270,30 @@ export const TenantsManagement: React.FC = () => {
             </ul>
           </div>
 
-          <div className="pt-3 border-t border-slate-100 mt-4">
-            <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-              <span>Seat Quota Utilization</span>
-              <span className="font-semibold text-slate-700">
-                {reps.length} of {activeOrganization.maxReps} Reps ({Math.round((reps.length / activeOrganization.maxReps) * 100)}%)
-              </span>
+          <div className="pt-3 border-t border-slate-100 mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex-1">
+              <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
+                <span>Seat Quota Utilization</span>
+                <span className="font-semibold text-slate-700">
+                  {reps.length} of {activeOrganization.maxReps} Reps ({Math.round((reps.length / activeOrganization.maxReps) * 100)}%)
+                </span>
+              </div>
+              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-blue-600 rounded-full transition-all"
+                  style={{ width: `${Math.min(100, (reps.length / activeOrganization.maxReps) * 100)}%` }}
+                />
+              </div>
             </div>
-            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-blue-600 rounded-full transition-all"
-                style={{ width: `${Math.min(100, (reps.length / activeOrganization.maxReps) * 100)}%` }}
-              />
-            </div>
+
+            <button
+              type="button"
+              onClick={() => setActiveAdminTab('subscriptions')}
+              className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs border border-blue-200 shadow-2xs transition-colors flex items-center justify-center gap-1.5 shrink-0 cursor-pointer self-start sm:self-center"
+            >
+              <CreditCard size={14} weight="bold" />
+              <span>SaaS Plans &amp; Stripe</span>
+            </button>
           </div>
         </div>
       </div>

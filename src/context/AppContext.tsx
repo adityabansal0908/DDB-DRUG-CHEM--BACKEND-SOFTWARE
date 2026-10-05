@@ -17,7 +17,9 @@ import {
   NotificationType,
   CompanyProfile,
   Organization,
-  TenantPlan
+  TenantPlan,
+  SaaSPricingPlan,
+  PaymentTransaction
 } from '../types';
 import {
   INITIAL_DOCTORS,
@@ -35,6 +37,10 @@ import {
   APEX_ISOLATED_DATA,
   ZENITH_ISOLATED_DATA
 } from '../data/tenantData';
+import {
+  DEFAULT_PRICING_PLANS,
+  INITIAL_PAYMENT_TRANSACTIONS
+} from '../data/subscriptionData';
 import { toast } from 'sonner';
 import { playNotificationChime } from '../utils/sound';
 import { applyFifoDeduction } from '../utils/fifoHelper';
@@ -49,6 +55,7 @@ import {
   subscribeToCollection,
   migrateAndSeedFirestore
 } from '../lib/firestoreService';
+import { safeStorageSet, safeStorageGet, safeStorageRemove } from '../lib/storage';
 
 // Initial default user accounts
 const INITIAL_USERS: (AuthUser & { passwordHash: string })[] = [
@@ -374,6 +381,20 @@ interface AppContextType {
     products: { current: number; max: number };
     planName: string;
   };
+
+  // SaaS Subscription & Stripe Payments
+  pricingPlans: SaaSPricingPlan[];
+  updatePricingPlan: (planId: string, updates: Partial<SaaSPricingPlan>) => void;
+  resetPricingPlansToDefault: () => void;
+  paymentTransactions: PaymentTransaction[];
+  addPaymentTransaction: (txn: PaymentTransaction) => void;
+  resetPaymentTransactionsToDefault: () => void;
+  upgradeOrganizationSubscription: (
+    orgId: string,
+    planId: string,
+    billingCycle: 'monthly' | 'annual',
+    paymentDetails?: PaymentTransaction
+  ) => Promise<boolean>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -450,6 +471,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return 'Company Profile & Branding';
         case 'tenants':
           return 'Tenants & Organizations';
+        case 'subscriptions':
+          return 'Subscription & Billing';
         case 'history':
           return 'Audit Logs';
         default:
@@ -587,13 +610,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [organizations, activeTenantId]);
 
   useEffect(() => {
-    localStorage.setItem('ddb_saas_organizations_v1', JSON.stringify(organizations));
+    safeStorageSet('ddb_saas_organizations_v1', JSON.stringify(organizations));
   }, [organizations]);
 
   // Products (All partitions)
   const [allProducts, setAllProducts] = useState<Product[]>(() => {
-    const saved = localStorage.getItem('ddb_products');
-    const isZeroStockApplied = localStorage.getItem('ddb_zero_stock_blank_pricing_v2') === 'true';
+    const saved = safeStorageGet('ddb_products');
+    const isZeroStockApplied = safeStorageGet('ddb_zero_stock_blank_pricing_v2') === 'true';
     let baseList: Product[] = [];
 
     if (saved) {
@@ -611,8 +634,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               status: 'out_of_stock' as const,
               batches: p.batches ? p.batches.map(b => ({ ...b, stock: 0 })) : []
             }));
-            localStorage.setItem('ddb_products', JSON.stringify(updated));
-            localStorage.setItem('ddb_zero_stock_blank_pricing_v2', 'true');
+            safeStorageSet('ddb_products', JSON.stringify(updated));
+            safeStorageSet('ddb_zero_stock_blank_pricing_v2', 'true');
             baseList = updated;
           } else {
             baseList = parsed.map(p => ({ ...p, tenantId: p.tenantId || 'tenant-ddb-01' }));
@@ -622,7 +645,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         baseList = INITIAL_PRODUCTS.map(p => ({ ...p, tenantId: 'tenant-ddb-01' }));
       }
     } else {
-      localStorage.setItem('ddb_zero_stock_blank_pricing_v2', 'true');
+      safeStorageSet('ddb_zero_stock_blank_pricing_v2', 'true');
       baseList = INITIAL_PRODUCTS.map(p => ({ ...p, tenantId: 'tenant-ddb-01' }));
     }
 
@@ -788,11 +811,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [allRetailCounters, activeOrganization.id]);
 
   useEffect(() => {
-    localStorage.setItem('pharmatrack_reps', JSON.stringify(allReps));
+    safeStorageSet('pharmatrack_reps', JSON.stringify(allReps));
   }, [allReps]);
 
   useEffect(() => {
-    localStorage.setItem('pharmatrack_retail_counters', JSON.stringify(allRetailCounters));
+    safeStorageSet('pharmatrack_retail_counters', JSON.stringify(allRetailCounters));
   }, [allRetailCounters]);
 
   const [currentRep, setCurrentRep] = useState<SalesRep>(() => {
@@ -802,7 +825,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Rep Account Catalogue Column Visibility Permissions (repId -> array of hidden column keys)
   const [repColumnPermissions, setRepColumnPermissions] = useState<Record<string, ProductCatalogColumnKey[]>>(() => {
-    const saved = localStorage.getItem('ddb_rep_column_permissions');
+    const saved = safeStorageGet('ddb_rep_column_permissions');
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -819,7 +842,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   useEffect(() => {
-    localStorage.setItem('ddb_rep_column_permissions', JSON.stringify(repColumnPermissions));
+    safeStorageSet('ddb_rep_column_permissions', JSON.stringify(repColumnPermissions));
   }, [repColumnPermissions]);
 
   // Field Visits (All partitions)
@@ -888,7 +911,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Real-time notifications state (All partitions)
   const [allNotifications, setAllNotifications] = useState<AdminNotification[]>(() => {
-    const saved = localStorage.getItem('ddb_admin_notifications');
+    const saved = safeStorageGet('ddb_admin_notifications');
     let baseList: AdminNotification[] = [];
     if (saved) {
       try {
@@ -918,11 +941,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   useEffect(() => {
-    localStorage.setItem('ddb_admin_notifications', JSON.stringify(notifications));
-  }, [notifications]);
+    safeStorageSet('ddb_admin_notifications', JSON.stringify(allNotifications.slice(0, 30)));
+  }, [allNotifications]);
 
   useEffect(() => {
-    localStorage.setItem('ddb_notification_sound', String(notificationSoundEnabled));
+    safeStorageSet('ddb_notification_sound', String(notificationSoundEnabled));
   }, [notificationSoundEnabled]);
 
   const unreadNotificationsCount = useMemo(() => {
@@ -1006,7 +1029,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       batchDeleteDocuments('notifications', prev.map(n => n.id)).catch(() => {});
       return [];
     });
-    localStorage.removeItem('ddb_admin_notifications');
+    safeStorageRemove('ddb_admin_notifications');
     toast.info('All notifications cleared');
   }, []);
 
@@ -1159,28 +1182,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Sync users & audit logs to localStorage
   useEffect(() => {
-    localStorage.setItem('ddb_auth_users', JSON.stringify(authUsers));
+    safeStorageSet('ddb_auth_users', JSON.stringify(authUsers));
   }, [authUsers]);
 
   useEffect(() => {
     if (currentUser) {
-      localStorage.setItem('ddb_current_user', JSON.stringify(currentUser));
+      safeStorageSet('ddb_current_user', JSON.stringify(currentUser));
     } else {
-      localStorage.removeItem('ddb_current_user');
+      safeStorageRemove('ddb_current_user');
     }
   }, [currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('ddb_products', JSON.stringify(allProducts));
+    safeStorageSet('ddb_products', JSON.stringify(allProducts));
   }, [allProducts]);
 
   useEffect(() => {
-    localStorage.setItem('ddb_audit_logs', JSON.stringify(allAuditLogs));
+    safeStorageSet('ddb_audit_logs', JSON.stringify(allAuditLogs.slice(0, 50)));
   }, [allAuditLogs]);
 
   // Sync Company Profile to localStorage & Firestore
   useEffect(() => {
-    localStorage.setItem('ddb_saas_company_profile_v1', JSON.stringify(companyProfile));
+    safeStorageSet('ddb_saas_company_profile_v1', JSON.stringify(companyProfile));
     saveDocument('company_profile', companyProfile).catch(() => {});
   }, [companyProfile]);
 
@@ -1598,16 +1621,133 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [reps.length, products.length, activeOrganization]);
 
+  // SaaS Pricing Plans State
+  const [pricingPlans, setPricingPlans] = useState<SaaSPricingPlan[]>(() => {
+    const saved = localStorage.getItem('ddb_saas_pricing_plans_v1');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch (e) {}
+    }
+    return DEFAULT_PRICING_PLANS;
+  });
+
   useEffect(() => {
-    localStorage.setItem('pharmatrack_doctors', JSON.stringify(allDoctors));
+    safeStorageSet('ddb_saas_pricing_plans_v1', JSON.stringify(pricingPlans));
+  }, [pricingPlans]);
+
+  const updatePricingPlan = useCallback((planId: string, updates: Partial<SaaSPricingPlan>) => {
+    setPricingPlans(prev => {
+      const updated = prev.map(p => (p.id === planId ? { ...p, ...updates } : p));
+      saveDocument('subscription_plans', { id: planId, ...updates }).catch(() => {});
+      return updated;
+    });
+  }, []);
+
+  const resetPricingPlansToDefault = useCallback(() => {
+    setPricingPlans(DEFAULT_PRICING_PLANS);
+    safeStorageSet('ddb_saas_pricing_plans_v1', JSON.stringify(DEFAULT_PRICING_PLANS));
+    toast.success('Reset all SaaS pricing plans and quotas to system defaults');
+  }, []);
+
+  // Stripe Payment Transactions Ledger
+  const [paymentTransactions, setPaymentTransactions] = useState<PaymentTransaction[]>(() => {
+    const saved = safeStorageGet('ddb_payment_transactions_v1');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const existingIds = new Set(parsed.map((p: PaymentTransaction) => p.id));
+          const missingInitials = INITIAL_PAYMENT_TRANSACTIONS.filter(t => !existingIds.has(t.id));
+          return [...parsed, ...missingInitials];
+        }
+      } catch (e) {}
+    }
+    return INITIAL_PAYMENT_TRANSACTIONS;
+  });
+
+  useEffect(() => {
+    safeStorageSet('ddb_payment_transactions_v1', JSON.stringify(paymentTransactions));
+  }, [paymentTransactions]);
+
+  const addPaymentTransaction = useCallback((txn: PaymentTransaction) => {
+    setPaymentTransactions(prev => [txn, ...prev]);
+    saveDocument('payment_transactions', txn).catch(() => {});
+  }, []);
+
+  const resetPaymentTransactionsToDefault = useCallback(() => {
+    setPaymentTransactions(INITIAL_PAYMENT_TRANSACTIONS);
+    safeStorageSet('ddb_payment_transactions_v1', JSON.stringify(INITIAL_PAYMENT_TRANSACTIONS));
+    toast.success('Reset payment transaction records to system initial transactions');
+  }, []);
+
+  // Upgrade or renew organization subscription
+  const upgradeOrganizationSubscription = useCallback(
+    async (
+      orgId: string,
+      planId: string,
+      billingCycle: 'monthly' | 'annual',
+      paymentDetails?: PaymentTransaction
+    ): Promise<boolean> => {
+      const planDef = pricingPlans.find(p => p.id === planId) || DEFAULT_PRICING_PLANS.find(p => p.id === planId);
+      const maxReps = planDef?.maxReps || (planId === 'enterprise' ? 50 : planId === 'professional' ? 20 : 8);
+      const maxProducts = planDef?.maxProducts || (planId === 'enterprise' ? 1000 : planId === 'professional' ? 350 : 100);
+
+      setOrganizations(prev => {
+        const updated = prev.map(o => {
+          if (o.id === orgId) {
+            return {
+              ...o,
+              plan: planId as TenantPlan,
+              maxReps,
+              maxProducts,
+              updatedAt: new Date().toISOString()
+            };
+          }
+          return o;
+        });
+        safeStorageSet('ddb_saas_organizations_v1', JSON.stringify(updated));
+        const target = updated.find(o => o.id === orgId);
+        if (target) {
+          saveDocument('organizations', target).catch(() => {});
+          if (orgId === activeTenantId) {
+            setCompanyProfile(orgToCompanyProfile(target));
+          }
+        }
+        return updated;
+      });
+
+      // Add audit log
+      const targetOrg = organizations.find(o => o.id === orgId);
+      addAuditLog(
+        'UPDATE',
+        'Tenants & Organizations',
+        targetOrg?.name || orgId,
+        `Upgraded subscription to "${planDef?.name || planId.toUpperCase()}" (${billingCycle.toUpperCase()} billing via Stripe). Quotas adjusted: ${maxReps} Reps, ${maxProducts} Products.`,
+        undefined,
+        paymentDetails ? `Invoice: ${paymentDetails.invoiceNumber} | Stripe PI: ${paymentDetails.stripePaymentIntentId}` : undefined,
+        'tenant'
+      );
+
+      toast.success(`Subscription upgraded to ${planDef?.name || planId.toUpperCase()} Tier!`);
+      return true;
+    },
+    [pricingPlans, activeTenantId, organizations, addAuditLog]
+  );
+
+  useEffect(() => {
+    safeStorageSet('pharmatrack_doctors', JSON.stringify(allDoctors));
   }, [allDoctors]);
 
   useEffect(() => {
-    localStorage.setItem('pharmatrack_visits', JSON.stringify(allVisits));
+    safeStorageSet('pharmatrack_visits', JSON.stringify(allVisits.slice(0, 50)));
   }, [allVisits]);
 
   useEffect(() => {
-    localStorage.setItem('pharmatrack_orders', JSON.stringify(allOrders));
+    safeStorageSet('pharmatrack_orders', JSON.stringify(allOrders.slice(0, 50)));
   }, [allOrders]);
 
   // 1. Firebase Authentication: ensure an authenticated session exists for security rules
@@ -3348,7 +3488,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createOrganization,
         updateOrganization,
         deleteOrganization,
-        tenantQuotaUsage
+        tenantQuotaUsage,
+        pricingPlans,
+        updatePricingPlan,
+        resetPricingPlansToDefault,
+        paymentTransactions,
+        addPaymentTransaction,
+        resetPaymentTransactionsToDefault,
+        upgradeOrganizationSubscription
       }}
     >
       {children}

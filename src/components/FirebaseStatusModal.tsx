@@ -139,6 +139,10 @@ export const FirebaseStatusModal: React.FC<FirebaseStatusModalProps> = ({ isOpen
                 <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 animate-spin">
                   <ArrowClockwise size={18} />
                 </div>
+              ) : connResult?.quotaExceeded ? (
+                <div className="w-9 h-9 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                  <Database size={20} weight="fill" />
+                </div>
               ) : connResult?.connected ? (
                 <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
                   <CheckCircle size={22} weight="fill" />
@@ -149,35 +153,56 @@ export const FirebaseStatusModal: React.FC<FirebaseStatusModalProps> = ({ isOpen
                 </div>
               )}
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-bold text-sm text-slate-900">
                     {testing
                       ? 'Pinging Google Cloud Firestore...'
+                      : connResult?.quotaExceeded
+                      ? 'Connected — Free Daily Usage Limit Reached'
                       : connResult?.connected
                       ? 'Active & Storing to Cloud Firestore'
                       : 'Connection Warning'}
                   </span>
-                  {connResult?.connected && (
+                  {connResult?.quotaExceeded ? (
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300">
+                      Starter Tier Limit
+                    </span>
+                  ) : connResult?.connected ? (
                     <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
                       {connResult.latencyMs} ms latency
                     </span>
-                  )}
+                  ) : null}
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Every product, doctor visit, order, representative GPS record, organization, and audit log is synchronously saved to your dedicated Firestore instance.
+                  {connResult?.quotaExceeded
+                    ? 'Your database is provisioned and your app data is safely stored in Google Cloud Firestore. The free daily usage limit on AI Studio Starter Tier was reached today; it automatically resets tomorrow, or you can upgrade to pay-as-you-go.'
+                    : 'Every product, doctor visit, order, representative GPS record, organization, and audit log is synchronously saved to your dedicated Firestore instance.'}
                 </p>
               </div>
             </div>
 
-            <button
-              type="button"
-              disabled={testing}
-              onClick={runDiagnostics}
-              className="self-start sm:self-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50"
-            >
-              <ArrowClockwise size={13} className={testing ? 'animate-spin' : ''} />
-              <span>Refresh Status</span>
-            </button>
+            <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+              {connResult?.quotaExceeded && connResult.upgradeUrl && (
+                <a
+                  href={connResult.upgradeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>Upgrade Quota</span>
+                  <ArrowSquareOut size={13} />
+                </a>
+              )}
+              <button
+                type="button"
+                disabled={testing}
+                onClick={runDiagnostics}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <ArrowClockwise size={13} className={testing ? 'animate-spin' : ''} />
+                <span>Refresh</span>
+              </button>
+            </div>
           </div>
 
           {/* Cloud Instance Specifications */}

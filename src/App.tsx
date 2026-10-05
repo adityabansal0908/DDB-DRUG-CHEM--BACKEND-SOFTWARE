@@ -13,6 +13,7 @@ import { SalesRepReports } from './components/admin/SalesRepReports';
 import { MedicalStoreManagement } from './components/admin/MedicalStoreManagement';
 import { CompanyProfileBranding } from './components/admin/CompanyProfileBranding';
 import { TenantsManagement } from './components/admin/TenantsManagement';
+import { SubscriptionManagement } from './components/admin/SubscriptionManagement';
 import { RepMobileView } from './components/rep/RepMobileView';
 import { PhotoModal } from './components/PhotoModal';
 import { SignedOutPage } from './components/SignedOutPage';
@@ -68,6 +69,8 @@ const AppContent: React.FC = () => {
               return <CompanyProfileBranding />;
             case 'tenants':
               return <TenantsManagement />;
+            case 'subscriptions':
+              return <SubscriptionManagement />;
             default:
               return <AdminDashboard />;
           }
@@ -106,7 +109,7 @@ const AppContent: React.FC = () => {
             id="admin-main-viewport"
             data-testid="admin-main-viewport"
             className={`flex-1 min-h-[calc(100vh-4rem)] bg-slate-50 overflow-x-hidden transition-all duration-300 ${
-              isSidebarCollapsed ? 'lg:ml-0' : 'lg:ml-[250px]'
+              isSidebarCollapsed ? 'lg:ml-0' : 'lg:ml-[270px]'
             }`}
           >
             {renderAdminContent()}

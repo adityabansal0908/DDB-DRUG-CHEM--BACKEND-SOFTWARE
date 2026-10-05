@@ -16,8 +16,55 @@ import {
   DocumentData,
   Unsubscribe
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import firebaseConfig from '../../firebase-applet-config.json';
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 /**
  * Strips undefined values from objects recursively because Firestore rejects undefined.
@@ -82,13 +129,13 @@ export async function saveDocument<T extends { id: string }>(
   item: T,
   merge: boolean = true
 ): Promise<void> {
+  const path = `${collectionName}/${item.id}`;
   try {
     const cleanData = sanitizeForFirestore(item);
     const docRef = doc(db, collectionName, item.id);
     await setDoc(docRef, cleanData, { merge });
   } catch (error) {
-    console.error(`[Firestore] Error saving document to ${collectionName}/${item.id}:`, error);
-    throw error;
+    handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
 
@@ -100,13 +147,13 @@ export async function updateDocument(
   id: string,
   updates: Record<string, unknown>
 ): Promise<void> {
+  const path = `${collectionName}/${id}`;
   try {
     const cleanUpdates = sanitizeForFirestore(updates);
     const docRef = doc(db, collectionName, id);
     await updateDoc(docRef, cleanUpdates);
   } catch (error) {
-    console.error(`[Firestore] Error updating document ${collectionName}/${id}:`, error);
-    throw error;
+    handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
 
@@ -117,12 +164,12 @@ export async function deleteDocument(
   collectionName: string,
   id: string
 ): Promise<void> {
+  const path = `${collectionName}/${id}`;
   try {
     const docRef = doc(db, collectionName, id);
     await deleteDoc(docRef);
   } catch (error) {
-    console.error(`[Firestore] Error deleting document ${collectionName}/${id}:`, error);
-    throw error;
+    handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
@@ -262,11 +309,13 @@ export async function migrateAndSeedFirestore(sources: {
 
 export interface FirestoreConnectionResult {
   connected: boolean;
+  quotaExceeded?: boolean;
   latencyMs: number;
   databaseId: string;
   projectId: string;
   error?: string;
   consoleUrl: string;
+  upgradeUrl: string;
 }
 
 /**
@@ -277,6 +326,7 @@ export async function testFirestoreConnection(): Promise<FirestoreConnectionResu
   const databaseId = firebaseConfig.firestoreDatabaseId || '(default)';
   const projectId = firebaseConfig.projectId;
   const consoleUrl = `https://console.firebase.google.com/project/${projectId}/firestore/databases/${databaseId}/data`;
+  const upgradeUrl = `https://console.firebase.google.com/project/${projectId}/firestore/databases/${databaseId}/data?openUpgradeDialog=true`;
 
   const startTime = performance.now();
   try {
@@ -288,15 +338,30 @@ export async function testFirestoreConnection(): Promise<FirestoreConnectionResu
       latencyMs,
       databaseId,
       projectId,
-      consoleUrl
+      consoleUrl,
+      upgradeUrl
     };
   } catch (error) {
     const latencyMs = Math.round(performance.now() - startTime);
     const errorMsg = error instanceof Error ? error.message : String(error);
-    
-    // In Firestore, if a document doesn't exist, getDocFromServer succeeds with snapshot.exists() === false.
-    // An error is only thrown on actual network/offline or security rule rejection.
-    // If the error is permission-denied or offline, report it accurately.
+    const isQuota =
+      errorMsg.toLowerCase().includes('quota') ||
+      errorMsg.toLowerCase().includes('resource-exhausted') ||
+      errorMsg.toLowerCase().includes('daily usage');
+
+    if (isQuota) {
+      return {
+        connected: true,
+        quotaExceeded: true,
+        latencyMs,
+        databaseId,
+        projectId,
+        error: "Free daily usage limit reached on Google Cloud Starter Tier. Data is saved in Firebase. Quota resets daily, or you can upgrade to pay-as-you-go.",
+        consoleUrl,
+        upgradeUrl
+      };
+    }
+
     if (errorMsg.includes('the client is offline')) {
       return {
         connected: false,
@@ -304,11 +369,12 @@ export async function testFirestoreConnection(): Promise<FirestoreConnectionResu
         databaseId,
         projectId,
         error: 'Client is offline. Please check your internet connection or Firebase setup.',
-        consoleUrl
+        consoleUrl,
+        upgradeUrl
       };
     }
 
-    // If permission or other non-fatal test doc error, test with a public collection read check
+    // Fallback probe
     try {
       const q = query(collection(db, 'products'), limit(1));
       await getDocs(q);
@@ -317,16 +383,23 @@ export async function testFirestoreConnection(): Promise<FirestoreConnectionResu
         latencyMs: Math.round(performance.now() - startTime),
         databaseId,
         projectId,
-        consoleUrl
+        consoleUrl,
+        upgradeUrl
       };
     } catch (fallbackError) {
+      const fbMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+      const isFbQuota = fbMsg.toLowerCase().includes('quota') || fbMsg.toLowerCase().includes('resource-exhausted');
       return {
-        connected: false,
+        connected: isFbQuota ? true : false,
+        quotaExceeded: isFbQuota,
         latencyMs,
         databaseId,
         projectId,
-        error: errorMsg,
-        consoleUrl
+        error: isFbQuota
+          ? 'Free daily usage limit reached on Google Cloud Starter Tier. All data is securely stored in Firebase.'
+          : errorMsg,
+        consoleUrl,
+        upgradeUrl
       };
     }
   }

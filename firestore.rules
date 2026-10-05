@@ -85,6 +85,24 @@ service cloud.firestore {
       allow create, update, delete: if true;
     }
 
+    // SaaS Subscription Pricing Plans Collection
+    match /subscription_plans/{planId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Stripe Payment Transactions Collection
+    match /payment_transactions/{txnId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Company Profile Collection (Tenant Branding & Corporate Details)
+    match /company_profile/{profileId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
     // Settings / Config Collection
     match /settings/{settingId} {
       allow read: if true;

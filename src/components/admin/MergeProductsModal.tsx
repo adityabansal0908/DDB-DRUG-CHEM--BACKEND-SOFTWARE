@@ -22,22 +22,30 @@ interface MergeProductsModalProps {
   isOpen: boolean;
   onClose: () => void;
   productName: string;
+  dosageForm?: string;
 }
 
 export const MergeProductsModal: React.FC<MergeProductsModalProps> = ({
   isOpen,
   onClose,
-  productName
+  productName,
+  dosageForm
 }) => {
   const { products, deleteProduct, isProductOrdered, getProductOrderCount, mergeProducts } = useApp();
 
-  // Find all products with this name (case-insensitive)
+  // Find all products with this name (case-insensitive) AND exact dosage form
   const duplicateProducts = useMemo(() => {
     if (!productName) return [];
-    return products.filter(
-      (p) => p.name.trim().toLowerCase() === productName.trim().toLowerCase()
-    );
-  }, [products, productName]);
+    const cleanName = productName.trim().toLowerCase();
+    const cleanForm = (dosageForm || '').trim().toLowerCase();
+    return products.filter((p) => {
+      if (!p || !p.name) return false;
+      const matchName = p.name.trim().toLowerCase() === cleanName;
+      if (!matchName) return false;
+      const pForm = (p.form || '').trim().toLowerCase();
+      return pForm === cleanForm;
+    });
+  }, [products, productName, dosageForm]);
 
   // Selected primary product id
   const [selectedPrimaryId, setSelectedPrimaryId] = useState<string>('');
@@ -131,6 +139,11 @@ export const MergeProductsModal: React.FC<MergeProductsModalProps> = ({
               </div>
               <p className="text-xs text-slate-600 mt-0.5">
                 Duplicate product name: <span className="font-bold text-slate-900 font-mono">"{productName}"</span>
+                {dosageForm && (
+                  <span className="ml-1.5 px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold uppercase tracking-wider">
+                    Form: {dosageForm}
+                  </span>
+                )}
               </p>
             </div>
           </div>

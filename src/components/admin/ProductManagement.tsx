@@ -14,6 +14,7 @@ import { BatchEditModal } from './BatchEditModal';
 import { BulkInventoryAdjusterModal } from './BulkInventoryAdjusterModal';
 import { ProductExpiryTracker } from './ProductExpiryTracker';
 import { BatchManagementModal } from './BatchManagementModal';
+import { ExportProductsModal, ExportScope } from './ExportProductsModal';
 import { InventoryChangeLog } from './InventoryChangeLog';
 import { evaluateProductExpiry, ExpiryUrgency } from '../../utils/expiryHelper';
 import { downloadExcelTemplate, exportProductsToExcel } from '../../utils/excelHelper';
@@ -82,13 +83,16 @@ export const ProductManagement: React.FC = () => {
     checkAndTriggerStockAlerts,
     previewPhotoUrl,
     setPreviewPhotoUrl,
-    auditLogs
+    auditLogs,
+    activeOrganization
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportModalScope, setExportModalScope] = useState<ExportScope>('all');
   const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
 
   // Product Expiry Tracker & Batch Management State
@@ -180,19 +184,8 @@ export const ProductManagement: React.FC = () => {
   const [isThresholdInputOpen, setIsThresholdInputOpen] = useState<boolean>(false);
   const [customThresholdInput, setCustomThresholdInput] = useState<string>('500');
 
-  // Collapsable Inventory Warning Banner State
-  const [isInventoryWarningCollapsed, setIsInventoryWarningCollapsed] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('ddb_inventory_warning_collapsed');
-      return saved ? JSON.parse(saved) : false;
-    } catch {
-      return false;
-    }
-  });
-
-  useEffect(() => {
-    localStorage.setItem('ddb_inventory_warning_collapsed', JSON.stringify(isInventoryWarningCollapsed));
-  }, [isInventoryWarningCollapsed]);
+  // Collapsable Inventory Warning Banner State (always remains collapsed until clicked on expand)
+  const [isInventoryWarningCollapsed, setIsInventoryWarningCollapsed] = useState<boolean>(true);
 
   // Quick Stock Level Adjuster Modal State
   const [adjustingStockProduct, setAdjustingStockProduct] = useState<Product | null>(null);
@@ -369,12 +362,21 @@ export const ProductManagement: React.FC = () => {
     return products.filter((p) => (p?.category || '').toLowerCase().trim() === cat.toLowerCase().trim()).length;
   };
 
-  // Duplicate product detection by case-insensitive name
+  // Helper to build duplicate key: same name AND same dosage form
+  const getProductDuplicateKey = (p: Product | null | undefined): string => {
+    if (!p || !p.name) return '';
+    const cleanName = p.name.trim().toLowerCase();
+    const cleanForm = (p.form || '').trim().toLowerCase();
+    return `${cleanName}:::${cleanForm}`;
+  };
+
+  // Duplicate product detection by case-insensitive name AND dosage form
   const duplicateGroups = useMemo(() => {
     const map = new Map<string, Product[]>();
     (products || []).forEach((p) => {
       if (!p || !p.name) return;
-      const key = p.name.trim().toLowerCase();
+      const key = getProductDuplicateKey(p);
+      if (!key) return;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(p);
     });
@@ -396,7 +398,7 @@ export const ProductManagement: React.FC = () => {
     return sum;
   }, [duplicateGroups]);
 
-  const [mergeModalProductName, setMergeModalProductName] = useState<string | null>(null);
+  const [mergeModalTarget, setMergeModalTarget] = useState<{ name: string; form: string } | null>(null);
   const [showDuplicatesOnly, setShowDuplicatesOnly] = useState<boolean>(false);
 
   const filteredProducts = useMemo(() => {
@@ -432,8 +434,8 @@ export const ProductManagement: React.FC = () => {
 
     if (showDuplicatesOnly) {
       candidates = candidates.filter((p) => {
-        const pName = p?.name ? p.name.trim().toLowerCase() : '';
-        return pName ? duplicateGroups.has(pName) : false;
+        const key = getProductDuplicateKey(p);
+        return key ? duplicateGroups.has(key) : false;
       });
     }
 
@@ -972,6 +974,26 @@ export const ProductManagement: React.FC = () => {
             <span>Import Excel</span>
           </button>
 
+          {/* Export Catalogue Dataset Button */}
+          <button
+            id="export-catalog-btn"
+            data-testid="export-catalog-btn"
+            onClick={() => {
+              setExportModalScope(selectedProductIds.length > 0 ? 'selected' : 'all');
+              setIsExportModalOpen(true);
+            }}
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-sm font-semibold transition-colors cursor-pointer shadow-2xs"
+            title="Export products dataset with options for All, Selected, or Filtered items to Excel (.xlsx) or CSV (.csv)"
+          >
+            <DownloadSimple size={18} weight="bold" className="text-emerald-700" />
+            <span>Export Data</span>
+            {selectedProductIds.length > 0 && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-700 text-white tabular-nums">
+                {selectedProductIds.length}
+              </span>
+            )}
+          </button>
+
           {/* Add Formulation Button - Matching image exactly */}
           <button
             id="add-product-btn"
@@ -1070,6 +1092,348 @@ export const ProductManagement: React.FC = () => {
         <InventoryChangeLog onSwitchToCatalog={() => setActiveCatalogSubTab('catalog')} />
       ) : (
         <>
+          {/* Tracker 1: Product Expiry Tracker Panel (Above Search Bar, Always Collapsed by Default) */}
+          {showExpiryTracker && (
+            <ProductExpiryTracker
+              products={products}
+              onOpenBatchModal={(p) => {
+                setSelectedBatchProduct(p);
+                setIsBatchModalOpen(true);
+              }}
+              activeFilterUrgency={activeExpiryUrgencyFilter}
+              onFilterChange={(filter) => setActiveExpiryUrgencyFilter(filter)}
+            />
+          )}
+
+          {/* Tracker 2: Low Stock & Re-Order Warning System Banner (Above Search Bar, Always Collapsed by Default) */}
+          {lowStockProducts.length > 0 && (
+            isInventoryWarningCollapsed ? (
+              <div
+                id="low-stock-warning-banner-collapsed"
+                data-testid="low-stock-warning-banner-collapsed"
+                className="bg-rose-50/95 border border-rose-200/90 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 shadow-2xs transition-all"
+              >
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="w-8 h-8 rounded-lg bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <Warning size={18} weight="fill" />
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      id="inventory-warning-collapsed-checkbox"
+                      data-testid="inventory-warning-collapsed-checkbox"
+                      checked={false}
+                      onChange={() => setIsInventoryWarningCollapsed(false)}
+                      className="w-4 h-4 rounded text-rose-600 border-rose-300 focus:ring-rose-500 cursor-pointer"
+                      title="Uncheck to collapse, check to expand"
+                    />
+                    <span className="text-xs font-bold text-rose-950">
+                      Inventory Warning: {lowStockProducts.length} Formulation{lowStockProducts.length > 1 ? 's' : ''} Below Buffer Threshold ({outOfStockProducts.length} Depleted / 0 Units)
+                    </span>
+                  </label>
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-rose-200 text-rose-900 px-2 py-0.5 rounded-md">
+                    Banner Collapsed
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    id="collapsed-bulk-adjust-btn"
+                    data-testid="collapsed-bulk-adjust-btn"
+                    onClick={() => {
+                      setSelectedProductIds(lowStockProducts.map(p => p.id));
+                      setIsInventoryAdjusterModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-2xs transition-colors cursor-pointer"
+                    title="Select all depleted/warning formulations and launch Bulk Inventory Adjuster"
+                  >
+                    <Package size={14} weight="fill" />
+                    <span>Bulk Adjust ({lowStockProducts.length})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    id="expand-low-stock-banner-btn"
+                    data-testid="expand-low-stock-banner-btn"
+                    onClick={() => setIsInventoryWarningCollapsed(false)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-rose-900 border border-rose-300 hover:bg-rose-100 transition-colors cursor-pointer shadow-2xs"
+                  >
+                    <span>Expand Warning</span>
+                    <CaretDown size={14} weight="bold" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div
+                id="low-stock-warning-banner"
+                data-testid="low-stock-warning-banner"
+                className="bg-white border-2 border-rose-200/90 rounded-xl overflow-hidden shadow-xs transition-all"
+              >
+                {/* Banner Header: Status, Alerts & Primary Action */}
+                <div className="bg-rose-50/95 p-3.5 sm:p-4 border-b border-rose-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div className="flex items-start sm:items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                      <Warning size={22} weight="fill" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-sm font-bold text-rose-950 font-heading">
+                          Inventory Buffer &amp; Re-Order Warning System
+                        </h4>
+                        <label className="inline-flex items-center gap-1.5 cursor-pointer bg-rose-200/80 hover:bg-rose-300/80 text-rose-900 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md transition-colors select-none">
+                          <input
+                            type="checkbox"
+                            id="inventory-warning-banner-checkbox"
+                            data-testid="inventory-warning-banner-checkbox"
+                            checked={true}
+                            onChange={() => setIsInventoryWarningCollapsed(true)}
+                            className="w-3.5 h-3.5 rounded text-rose-600 border-rose-400 focus:ring-rose-500 cursor-pointer"
+                            title="Click to collapse inventory warning banner"
+                          />
+                          <span>Inventory Warning</span>
+                        </label>
+                        {outOfStockProducts.length > 0 && (
+                          <span className="text-[10px] font-bold uppercase tracking-wider bg-rose-700 text-white px-2 py-0.5 rounded-md">
+                            {outOfStockProducts.length} Depleted (0 Units)
+                          </span>
+                        )}
+                        {highDemandReorderProducts.length > 0 && (
+                          <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-500 text-white px-2 py-0.5 rounded-md flex items-center gap-1 shadow-2xs">
+                            <Fire size={11} weight="fill" />
+                            {highDemandReorderProducts.length} High-Demand
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-rose-800 mt-0.5">
+                        {outOfStockProducts.length > 0
+                          ? `${outOfStockProducts.length} formulation${outOfStockProducts.length > 1 ? 's currently have' : ' has'} 0 units in stock. Automated notifications alert procurement to replenish warehouse buffer.`
+                          : `All ${lowStockProducts.length} formulation${lowStockProducts.length > 1 ? 's are' : ' is'} below the predefined safety threshold of ${lowStockThreshold} units.`}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Header Actions */}
+                  <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                    <button
+                      type="button"
+                      id="trigger-stock-alerts-btn"
+                      data-testid="trigger-stock-alerts-btn"
+                      onClick={() => {
+                        const res = checkAndTriggerStockAlerts(products, { forceNotify: true });
+                        toast.success('Automated Stock Alerts Dispatched', {
+                          description: `Broadcasted ${res.reorderCount} re-order warning(s) & ${res.outOfStockCount} out-of-stock alert(s) to Operations Console.`
+                        });
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs"
+                      title="Trigger automated re-order & out-of-stock notification alerts now"
+                    >
+                      <Lightning size={14} weight="fill" className="text-amber-500" />
+                      <span>Trigger Alerts</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      id="banner-bulk-adjust-stock-btn"
+                      data-testid="banner-bulk-adjust-stock-btn"
+                      onClick={() => {
+                        setSelectedProductIds(lowStockProducts.map(p => p.id));
+                        setIsInventoryAdjusterModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-xs transition-colors cursor-pointer"
+                      title="Select all formulations below threshold and launch Bulk Inventory Adjuster"
+                    >
+                      <Package size={14} weight="fill" />
+                      <span>Bulk Adjust Stock ({lowStockProducts.length})</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      id="collapse-low-stock-banner-btn"
+                      data-testid="collapse-low-stock-banner-btn"
+                      onClick={() => setIsInventoryWarningCollapsed(true)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-rose-800 hover:text-rose-950 bg-white border border-rose-200 transition-colors cursor-pointer shadow-2xs"
+                      title="Collapse this inventory warning banner"
+                    >
+                      <span>Collapse</span>
+                      <CaretUp size={14} weight="bold" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Banner Controls Toolbar: Neatly Segmented Filter View & Buffer Threshold */}
+                <div className="p-3 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs border-t border-slate-100">
+                  {/* Filter Segmented Control */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mr-1">Filter View:</span>
+                    <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg">
+                      <button
+                        type="button"
+                        id="filter-all-warnings-btn"
+                        data-testid="filter-all-warnings-btn"
+                        onClick={() => {
+                          if (stockFilterMode === 'below_threshold') {
+                            setStockFilterMode('all');
+                            setShowLowStockOnly(false);
+                          } else {
+                            setStockFilterMode('below_threshold');
+                            setShowLowStockOnly(true);
+                          }
+                        }}
+                        className={`px-2 py-1 rounded-md font-bold text-xs transition-colors cursor-pointer ${
+                          stockFilterMode === 'below_threshold'
+                            ? 'bg-rose-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        All Warnings ({lowStockProducts.length})
+                      </button>
+
+                      <button
+                        type="button"
+                        id="filter-depleted-stock-btn"
+                        data-testid="filter-depleted-stock-btn"
+                        onClick={() => {
+                          if (stockFilterMode === 'out_of_stock') {
+                            setStockFilterMode('all');
+                            setShowLowStockOnly(false);
+                          } else {
+                            setStockFilterMode('out_of_stock');
+                            setShowLowStockOnly(true);
+                          }
+                        }}
+                        className={`px-2 py-1 rounded-md font-bold text-xs transition-colors cursor-pointer flex items-center gap-1 ${
+                          stockFilterMode === 'out_of_stock'
+                            ? 'bg-rose-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <XCircle size={13} weight="fill" className={stockFilterMode === 'out_of_stock' ? 'text-white' : 'text-rose-600'} />
+                        <span>0 Stock Depleted ({outOfStockProducts.length})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        id="filter-reorder-stock-btn"
+                        data-testid="filter-reorder-stock-btn"
+                        onClick={() => {
+                          if (stockFilterMode === 'reorder') {
+                            setStockFilterMode('all');
+                            setShowLowStockOnly(false);
+                          } else {
+                            setStockFilterMode('reorder');
+                            setShowLowStockOnly(true);
+                          }
+                        }}
+                        className={`px-2 py-1 rounded-md font-bold text-xs transition-colors cursor-pointer ${
+                          stockFilterMode === 'reorder'
+                            ? 'bg-amber-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Re-Order Buffer ({reorderLevelProducts.length})
+                      </button>
+
+                      {highDemandReorderProducts.length > 0 && (
+                        <button
+                          type="button"
+                          id="filter-high-demand-reorder-btn"
+                          data-testid="filter-high-demand-reorder-btn"
+                          onClick={() => {
+                            if (stockFilterMode === 'high_demand') {
+                              setStockFilterMode('all');
+                              setShowLowStockOnly(false);
+                            } else {
+                              setStockFilterMode('high_demand');
+                              setShowLowStockOnly(true);
+                            }
+                          }}
+                          className={`px-2 py-1 rounded-md font-bold text-xs transition-colors cursor-pointer flex items-center gap-1 ${
+                            stockFilterMode === 'high_demand'
+                              ? 'bg-amber-600 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          <Fire size={13} weight="fill" className={stockFilterMode === 'high_demand' ? 'text-white' : 'text-orange-500'} />
+                          <span>High-Demand ({highDemandReorderProducts.length})</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {stockFilterMode !== 'all' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStockFilterMode('all');
+                          setShowLowStockOnly(false);
+                        }}
+                        className="px-2 py-1 text-slate-500 hover:text-slate-800 font-semibold cursor-pointer underline text-[11px]"
+                      >
+                        Reset Filter
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Buffer Threshold Presets */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mr-1">Buffer Threshold:</span>
+                    <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg">
+                      {[250, 500, 1000].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => {
+                            setLowStockThreshold(preset);
+                            setCustomThresholdInput(String(preset));
+                          }}
+                          className={`px-2 py-0.5 rounded-md font-bold text-[11px] transition-colors cursor-pointer ${
+                            lowStockThreshold === preset
+                              ? 'bg-white text-slate-900 shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                      {isThresholdInputOpen ? (
+                        <div className="flex items-center gap-1 pl-1">
+                          <input
+                            type="number"
+                            min="1"
+                            value={customThresholdInput}
+                            onChange={(e) => setCustomThresholdInput(e.target.value)}
+                            className="w-16 px-1.5 py-0.5 text-xs bg-white border border-slate-300 rounded font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const val = parseInt(customThresholdInput, 10);
+                              if (!isNaN(val) && val > 0) {
+                                setLowStockThreshold(val);
+                              }
+                              setIsThresholdInputOpen(false);
+                            }}
+                            className="px-2 py-0.5 bg-rose-700 text-white rounded font-bold text-[10px] cursor-pointer"
+                          >
+                            Set
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setIsThresholdInputOpen(true)}
+                          className="px-2 py-0.5 text-slate-600 hover:text-slate-900 font-semibold text-[11px] cursor-pointer"
+                        >
+                          Custom
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          )}
+
           {/* Restructured Filters, Search & Inventory Controls Header */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-3.5 sm:p-4 space-y-3">
         {/* Top Row: Search Input & Inventory Warning Status Controls */}
@@ -1406,9 +1770,10 @@ export const ProductManagement: React.FC = () => {
             <button
               type="button"
               onClick={() => {
-                const firstDupName = duplicateGroups.values().next().value?.[0]?.name;
-                if (firstDupName) {
-                  setMergeModalProductName(firstDupName);
+                const firstGroup = duplicateGroups.values().next().value;
+                const firstProd = firstGroup?.[0];
+                if (firstProd) {
+                  setMergeModalTarget({ name: firstProd.name, form: firstProd.form || '' });
                 }
               }}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
@@ -1418,311 +1783,6 @@ export const ProductManagement: React.FC = () => {
             </button>
           </div>
         </div>
-      )}
-
-      {/* Product Expiry Tracker Panel */}
-      {showExpiryTracker && (
-        <ProductExpiryTracker
-          products={products}
-          onOpenBatchModal={(p) => {
-            setSelectedBatchProduct(p);
-            setIsBatchModalOpen(true);
-          }}
-          activeFilterUrgency={activeExpiryUrgencyFilter}
-          onFilterChange={(filter) => setActiveExpiryUrgencyFilter(filter)}
-        />
-      )}
-
-      {/* Low Stock & Re-Order Warning System Banner (Collapsable) */}
-      {lowStockProducts.length > 0 && (
-        isInventoryWarningCollapsed ? (
-          <div
-            id="low-stock-warning-banner-collapsed"
-            data-testid="low-stock-warning-banner-collapsed"
-            className="bg-rose-50/95 border border-rose-200/90 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 shadow-2xs transition-all"
-          >
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="w-8 h-8 rounded-lg bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                <Warning size={18} weight="fill" />
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  id="inventory-warning-collapsed-checkbox"
-                  data-testid="inventory-warning-collapsed-checkbox"
-                  checked={false}
-                  onChange={() => setIsInventoryWarningCollapsed(false)}
-                  className="w-4 h-4 rounded text-rose-600 border-rose-300 focus:ring-rose-500 cursor-pointer"
-                  title="Uncheck to collapse, check to expand"
-                />
-                <span className="text-xs font-bold text-rose-950">
-                  Inventory Warning: {lowStockProducts.length} Formulation{lowStockProducts.length > 1 ? 's' : ''} Below Buffer Threshold ({outOfStockProducts.length} Depleted / 0 Units)
-                </span>
-              </label>
-              <span className="text-[10px] font-bold uppercase tracking-wider bg-rose-200 text-rose-900 px-2 py-0.5 rounded-md">
-                Banner Collapsed
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                id="collapsed-bulk-adjust-btn"
-                data-testid="collapsed-bulk-adjust-btn"
-                onClick={() => {
-                  setSelectedProductIds(lowStockProducts.map(p => p.id));
-                  setIsInventoryAdjusterModalOpen(true);
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-2xs transition-colors cursor-pointer"
-                title="Select all depleted/warning formulations and launch Bulk Inventory Adjuster"
-              >
-                <Package size={14} weight="fill" />
-                <span>Bulk Adjust ({lowStockProducts.length})</span>
-              </button>
-
-              <button
-                type="button"
-                id="expand-low-stock-banner-btn"
-                data-testid="expand-low-stock-banner-btn"
-                onClick={() => setIsInventoryWarningCollapsed(false)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-rose-900 border border-rose-300 hover:bg-rose-100 transition-colors cursor-pointer shadow-2xs"
-              >
-                <span>Expand Warning</span>
-                <CaretDown size={14} weight="bold" />
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div
-            id="low-stock-warning-banner"
-            data-testid="low-stock-warning-banner"
-            className="bg-white border-2 border-rose-200/90 rounded-xl overflow-hidden shadow-xs transition-all"
-          >
-            {/* Banner Header: Status, Alerts & Primary Action */}
-            <div className="bg-rose-50/95 p-3.5 sm:p-4 border-b border-rose-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div className="flex items-start sm:items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                  <Warning size={22} weight="fill" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h4 className="text-sm font-bold text-rose-950 font-heading">
-                      Inventory Buffer &amp; Re-Order Warning System
-                    </h4>
-                    <label className="inline-flex items-center gap-1.5 cursor-pointer bg-rose-200/80 hover:bg-rose-300/80 text-rose-900 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md transition-colors select-none">
-                      <input
-                        type="checkbox"
-                        id="inventory-warning-banner-checkbox"
-                        data-testid="inventory-warning-banner-checkbox"
-                        checked={true}
-                        onChange={() => setIsInventoryWarningCollapsed(true)}
-                        className="w-3.5 h-3.5 rounded text-rose-600 border-rose-400 focus:ring-rose-500 cursor-pointer"
-                        title="Click to collapse inventory warning banner"
-                      />
-                      <span>Inventory Warning</span>
-                    </label>
-                    {outOfStockProducts.length > 0 && (
-                      <span className="text-[10px] font-bold uppercase tracking-wider bg-rose-700 text-white px-2 py-0.5 rounded-md">
-                        {outOfStockProducts.length} Depleted (0 Units)
-                      </span>
-                    )}
-                    {highDemandReorderProducts.length > 0 && (
-                      <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-500 text-white px-2 py-0.5 rounded-md flex items-center gap-1 shadow-2xs">
-                        <Fire size={11} weight="fill" />
-                        {highDemandReorderProducts.length} High-Demand
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-rose-800 mt-0.5">
-                    {outOfStockProducts.length > 0
-                      ? `${outOfStockProducts.length} formulation${outOfStockProducts.length > 1 ? 's currently have' : ' has'} 0 units in stock. Automated notifications alert procurement to replenish warehouse buffer.`
-                      : `All ${lowStockProducts.length} formulation${lowStockProducts.length > 1 ? 's are' : ' is'} below the predefined safety threshold of ${lowStockThreshold} units.`}
-                  </p>
-                </div>
-              </div>
-
-              {/* Header Actions */}
-              <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
-                <button
-                  type="button"
-                  id="trigger-stock-alerts-btn"
-                  data-testid="trigger-stock-alerts-btn"
-                  onClick={() => {
-                    const res = checkAndTriggerStockAlerts(products, { forceNotify: true });
-                    toast.success('Automated Stock Alerts Dispatched', {
-                      description: `Broadcasted ${res.reorderCount} re-order warning(s) & ${res.outOfStockCount} out-of-stock alert(s) to Operations Console.`
-                    });
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs"
-                  title="Trigger automated re-order & out-of-stock notification alerts now"
-                >
-                  <Lightning size={14} weight="fill" className="text-amber-500" />
-                  <span>Trigger Alerts</span>
-                </button>
-
-                <button
-                  type="button"
-                  id="banner-bulk-adjust-stock-btn"
-                  data-testid="banner-bulk-adjust-stock-btn"
-                  onClick={() => {
-                    setSelectedProductIds(lowStockProducts.map(p => p.id));
-                    setIsInventoryAdjusterModalOpen(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-xs transition-colors cursor-pointer"
-                  title="Select all formulations below threshold and launch Bulk Inventory Adjuster"
-                >
-                  <Package size={14} weight="fill" />
-                  <span>Bulk Adjust Stock ({lowStockProducts.length})</span>
-                </button>
-
-                <button
-                  type="button"
-                  id="collapse-low-stock-banner-btn"
-                  data-testid="collapse-low-stock-banner-btn"
-                  onClick={() => setIsInventoryWarningCollapsed(true)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-rose-800 hover:text-rose-950 bg-white border border-rose-200 transition-colors cursor-pointer shadow-2xs"
-                  title="Collapse this inventory warning banner"
-                >
-                  <span>Collapse</span>
-                  <CaretUp size={14} weight="bold" />
-                </button>
-              </div>
-            </div>
-
-            {/* Banner Controls Toolbar: Neatly Segmented Filter View & Buffer Threshold */}
-            <div className="p-3 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs border-t border-slate-100">
-              {/* Filter Segmented Control */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mr-1">Filter View:</span>
-                <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg">
-                  <button
-                    type="button"
-                    id="filter-all-warnings-btn"
-                    data-testid="filter-all-warnings-btn"
-                    onClick={() => {
-                      if (stockFilterMode === 'below_threshold') {
-                        setStockFilterMode('all');
-                        setShowLowStockOnly(false);
-                      } else {
-                        setStockFilterMode('below_threshold');
-                        setShowLowStockOnly(true);
-                      }
-                    }}
-                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer ${
-                      stockFilterMode === 'below_threshold' || (showLowStockOnly && stockFilterMode === 'all')
-                        ? 'bg-rose-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    All Warnings ({lowStockProducts.length})
-                  </button>
-
-                  <button
-                    type="button"
-                    id="filter-reorder-only-btn"
-                    data-testid="filter-reorder-only-btn"
-                    onClick={() => {
-                      if (stockFilterMode === 'reorder') {
-                        setStockFilterMode('all');
-                        setShowLowStockOnly(false);
-                      } else {
-                        setStockFilterMode('reorder');
-                        setShowLowStockOnly(false);
-                      }
-                    }}
-                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer ${
-                      stockFilterMode === 'reorder'
-                        ? 'bg-amber-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Re-Order ({reorderLevelProducts.length})
-                  </button>
-
-                  {outOfStockProducts.length > 0 && (
-                    <button
-                      type="button"
-                      id="filter-out-of-stock-btn"
-                      data-testid="filter-out-of-stock-btn"
-                      onClick={() => {
-                        if (stockFilterMode === 'out_of_stock') {
-                          setStockFilterMode('all');
-                          setShowLowStockOnly(false);
-                        } else {
-                          setStockFilterMode('out_of_stock');
-                          setShowLowStockOnly(false);
-                        }
-                      }}
-                      className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer ${
-                        stockFilterMode === 'out_of_stock'
-                          ? 'bg-rose-700 text-white shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      Out of Stock ({outOfStockProducts.length})
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Buffer Threshold Presets */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mr-1">Buffer Threshold:</span>
-                <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg">
-                  {[250, 500, 1000].map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => {
-                        setLowStockThreshold(preset);
-                        setCustomThresholdInput(String(preset));
-                      }}
-                      className={`px-2 py-0.5 rounded-md font-bold text-[11px] transition-colors cursor-pointer ${
-                        lowStockThreshold === preset
-                          ? 'bg-white text-slate-900 shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      {preset}
-                    </button>
-                  ))}
-                  {isThresholdInputOpen ? (
-                    <div className="flex items-center gap-1 pl-1">
-                      <input
-                        type="number"
-                        min="1"
-                        value={customThresholdInput}
-                        onChange={(e) => setCustomThresholdInput(e.target.value)}
-                        className="w-16 px-1.5 py-0.5 text-xs bg-white border border-slate-300 rounded font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const val = parseInt(customThresholdInput, 10);
-                          if (!isNaN(val) && val > 0) {
-                            setLowStockThreshold(val);
-                          }
-                          setIsThresholdInputOpen(false);
-                        }}
-                        className="px-2 py-0.5 bg-rose-700 text-white rounded font-bold text-[10px] cursor-pointer"
-                      >
-                        Set
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setIsThresholdInputOpen(true)}
-                      className="px-2 py-0.5 text-slate-600 hover:text-slate-900 font-semibold text-[11px] cursor-pointer"
-                    >
-                      Custom
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )
       )}
 
       {/* Product Table or Empty State */}
@@ -1856,9 +1916,9 @@ export const ProductManagement: React.FC = () => {
                 {filteredProducts.map((p) => {
                   if (!p) return null;
                   const isSelected = selectedProductIds.includes(p.id);
-                  const pNameKey = p.name ? p.name.trim().toLowerCase() : '';
-                  const isDuplicate = pNameKey ? duplicateGroups.has(pNameKey) : false;
-                  const dupCount = pNameKey ? duplicateGroups.get(pNameKey)?.length || 0 : 0;
+                  const pDupKey = getProductDuplicateKey(p);
+                  const isDuplicate = pDupKey ? duplicateGroups.has(pDupKey) : false;
+                  const dupCount = pDupKey ? duplicateGroups.get(pDupKey)?.length || 0 : 0;
                   const hasOrders = isProductOrdered(p);
                   const orderCount = getProductOrderCount(p);
                   const isOutOfStock = (p.stockUnits ?? 0) === 0;
@@ -2044,7 +2104,7 @@ export const ProductManagement: React.FC = () => {
                             {/* Duplicate Badge */}
                             {isDuplicate && (
                               <span
-                                title={`${dupCount} formulations have this exact product name. Click Merge/Remove to resolve.`}
+                                title={`${dupCount} formulations have this exact product name and dosage form (${p.form || 'unspecified'}). Click Merge/Remove to resolve.`}
                                 className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full"
                               >
                                 <Warning size={12} weight="fill" className="text-amber-600" />
@@ -2088,9 +2148,9 @@ export const ProductManagement: React.FC = () => {
                               <button
                                 type="button"
                                 data-testid={`merge-btn-${p.id}`}
-                                onClick={() => setMergeModalProductName(p.name)}
+                                onClick={() => setMergeModalTarget({ name: p.name, form: p.form || '' })}
                                 className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 hover:text-amber-950 bg-amber-100/80 hover:bg-amber-200 border border-amber-300 px-2 py-0.5 rounded-md transition-colors cursor-pointer"
-                                title="Merge or remove duplicate formulations with this name"
+                                title={`Merge or remove duplicate formulations with this name and dosage form (${p.form || 'unspecified'})`}
                               >
                                 <GitMerge size={12} weight="bold" />
                                 <span>Merge / Remove Duplicate</span>
@@ -3381,9 +3441,10 @@ export const ProductManagement: React.FC = () => {
 
       {/* Merge & Resolve Duplicates Modal */}
       <MergeProductsModal
-        isOpen={!!mergeModalProductName}
-        productName={mergeModalProductName || ''}
-        onClose={() => setMergeModalProductName(null)}
+        isOpen={!!mergeModalTarget}
+        productName={mergeModalTarget?.name || ''}
+        dosageForm={mergeModalTarget?.form || ''}
+        onClose={() => setMergeModalTarget(null)}
       />
 
       {/* Batch Edit Pricing & Stock Levels Modal */}
@@ -3408,6 +3469,17 @@ export const ProductManagement: React.FC = () => {
           setIsBatchModalOpen(false);
           setSelectedBatchProduct(null);
         }}
+      />
+
+      {/* Export Product Dataset Modal */}
+      <ExportProductsModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        allProducts={products}
+        selectedProductIds={selectedProductIds}
+        filteredProducts={filteredProducts}
+        organizationName={activeOrganization?.name || 'DDB DRUG CHEM'}
+        initialScope={exportModalScope}
       />
 
       {/* Quick Attach Photo Modal */}
@@ -3641,12 +3713,15 @@ export const ProductManagement: React.FC = () => {
               type="button"
               id="pill-btn-export"
               data-testid="pill-btn-export"
-              onClick={handleExportSelected}
-              className="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 shadow-xs transition-colors"
-              title="Export selected items to Excel"
+              onClick={() => {
+                setExportModalScope('selected');
+                setIsExportModalOpen(true);
+              }}
+              className="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              title="Export selected items to Excel or CSV"
             >
               <DownloadSimple size={14} weight="bold" />
-              <span>Export</span>
+              <span>Export ({selectedProductIds.length})</span>
             </button>
 
             <button

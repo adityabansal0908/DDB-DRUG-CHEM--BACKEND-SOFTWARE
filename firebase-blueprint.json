@@ -211,6 +211,62 @@
         "drugLicenseNo": { "type": "string", "required": false },
         "gstin": { "type": "string", "required": false }
       }
+    },
+    "SaaSPricingPlan": {
+      "collection": "subscription_plans",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "name": { "type": "string", "required": true },
+        "monthlyPrice": { "type": "number", "required": true },
+        "annualPrice": { "type": "number", "required": true },
+        "currency": { "type": "string", "required": true },
+        "maxReps": { "type": "number", "required": true },
+        "maxProducts": { "type": "number", "required": true },
+        "maxDoctors": { "type": "number", "required": true }
+      }
+    },
+    "PaymentTransaction": {
+      "collection": "payment_transactions",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "tenantId": { "type": "string", "required": true },
+        "organizationName": { "type": "string", "required": true },
+        "amount": { "type": "number", "required": true },
+        "planId": { "type": "string", "required": true },
+        "stripePaymentIntentId": { "type": "string", "required": true },
+        "status": { "type": "string", "required": true },
+        "createdAt": { "type": "string", "required": true }
+      }
+    },
+    "CompanyProfile": {
+      "collection": "company_profile",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "name": { "type": "string", "required": true },
+        "legalName": { "type": "string", "required": false },
+        "tagline": { "type": "string", "required": false },
+        "logoUrl": { "type": "string", "required": false },
+        "logoType": { "type": "string", "required": false },
+        "presetIconId": { "type": "string", "required": false },
+        "primaryColor": { "type": "string", "required": false },
+        "drugLicenseNo": { "type": "string", "required": false },
+        "gstin": { "type": "string", "required": false },
+        "panNo": { "type": "string", "required": false },
+        "cin": { "type": "string", "required": false },
+        "fssaiLicenseNo": { "type": "string", "required": false },
+        "headOfficeAddress": { "type": "string", "required": false },
+        "city": { "type": "string", "required": false },
+        "state": { "type": "string", "required": false },
+        "pincode": { "type": "string", "required": false },
+        "contactEmail": { "type": "string", "required": false },
+        "contactPhone": { "type": "string", "required": false },
+        "website": { "type": "string", "required": false },
+        "invoicePrefix": { "type": "string", "required": false },
+        "currencySymbol": { "type": "string", "required": false },
+        "footerDisclaimer": { "type": "string", "required": false },
+        "status": { "type": "string", "required": false },
+        "updatedAt": { "type": "string", "required": false }
+      }
     }
   }
 }

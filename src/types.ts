@@ -348,7 +348,58 @@ export type AdminTabKey =
   | 'reports'
   | 'history'
   | 'company'
-  | 'tenants';
+  | 'tenants'
+  | 'subscriptions';
+
+export interface SaaSPricingPlan {
+  id: 'starter' | 'professional' | 'enterprise' | string;
+  name: string;
+  tagline: string;
+  monthlyPrice: number;
+  annualPrice: number;
+  currency: string;
+  currencyCode: string;
+  popularBadge?: boolean;
+  maxReps: number;
+  maxProducts: number;
+  maxDoctors: number;
+  features: {
+    fieldTelemetry: boolean;
+    directChemistBilling: boolean;
+    sampleAuditing: boolean;
+    whiteLabelReporting: boolean;
+    multiTerritoryTracking: boolean;
+    customLetterheadInvoices: boolean;
+    apiErpIntegration: boolean;
+    prioritySupport: boolean;
+  };
+  stripePriceIdMonthly?: string;
+  stripePriceIdAnnual?: string;
+  recommendedFor?: string;
+}
+
+export interface PaymentTransaction {
+  id: string; // e.g. "txn_123456"
+  tenantId: string;
+  organizationName: string;
+  amount: number;
+  currency: string;
+  planId: string;
+  planName: string;
+  billingCycle: 'monthly' | 'annual';
+  status: 'succeeded' | 'pending' | 'failed';
+  stripePaymentIntentId: string;
+  stripeReceiptUrl?: string;
+  paymentMethod: {
+    brand: string; // 'visa' | 'mastercard' | 'amex'
+    last4: string; // '4242'
+    expMonth: number;
+    expYear: number;
+  };
+  customerEmail: string;
+  invoiceNumber: string;
+  createdAt: string;
+}
 
 export type RepTabKey = 'route' | 'checkin' | 'catalog' | 'activity';
 

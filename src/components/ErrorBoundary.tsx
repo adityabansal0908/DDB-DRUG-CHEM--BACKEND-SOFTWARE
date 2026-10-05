@@ -30,6 +30,11 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   private handleReset = () => {
+    if (this.state.error?.message?.includes('quota') || this.state.error?.name === 'QuotaExceededError') {
+      try {
+        localStorage.removeItem('ddb_admin_notifications');
+      } catch {}
+    }
     this.setState({ hasError: false, error: null });
     if (this.props.onReset) {
       this.props.onReset();
