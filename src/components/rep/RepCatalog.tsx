@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CATALOG_COLUMNS, ProductCatalogColumnKey } from '../../types';
 import { formatGst } from '../../utils/gstHelper';
+import { matchesProductSearch } from '../../utils/productSearchHelper';
 import {
   MagnifyingGlass,
   Pill,
@@ -74,13 +75,7 @@ export const RepCatalog: React.FC = () => {
         const matchesCat =
           categoryFilter === 'All' ||
           (pCat && pCat.toLowerCase() === categoryFilter.toLowerCase().trim());
-        const term = searchTerm.trim().toLowerCase();
-        const matchesSearch =
-          term === '' ||
-          (p.name && p.name.toLowerCase().includes(term)) ||
-          (p.genericName && p.genericName.toLowerCase().includes(term)) ||
-          (p.company && p.company.toLowerCase().includes(term)) ||
-          (p.category && p.category.toLowerCase().includes(term));
+        const matchesSearch = matchesProductSearch(p, searchTerm);
         return matchesCat && matchesSearch;
       })
       .sort((a, b) => (a?.name || '').localeCompare(b?.name || '', undefined, { sensitivity: 'base' }));
@@ -218,7 +213,7 @@ export const RepCatalog: React.FC = () => {
             data-testid="rep-catalog-search"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search formulation, generic composition, category or company..."
+            placeholder="Search formulation, dosage form (e.g. tablet, syrup), composition..."
             className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -243,26 +238,26 @@ export const RepCatalog: React.FC = () => {
 
       {/* VIEW MODE: TABLE */}
       {viewMode === 'table' && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
+          <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-14rem)] min-h-[400px] scrollbar-thin scrollbar-thumb-slate-300 relative">
             <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[10px]">
+              <thead className="bg-slate-100 border-b-2 border-slate-300 text-slate-700 font-bold uppercase tracking-wider text-[10px] sticky top-0 z-10 shadow-2xs">
                 <tr>
-                  <th className="py-3 px-3">#</th>
+                  <th className="py-3 px-3 sticky top-0 z-10 bg-slate-100 border-b-2 border-slate-300">#</th>
                   {visibleTableColumns.map((col) => (
                     <th
                       key={col.key}
-                      className={`py-3 px-3 whitespace-nowrap ${
+                      className={`py-3 px-3 whitespace-nowrap sticky top-0 z-10 border-b-2 border-slate-300 ${
+                        ['pricingToStockist', 'pricingToRetailer'].includes(col.key)
+                          ? 'text-indigo-900 bg-indigo-100 font-bold'
+                          : 'bg-slate-100 text-slate-700'
+                      } ${
                         ['mrp', 'pricingToStockist', 'pricingToRetailer', 'sellingRate', 'purchasePrice'].includes(
                           col.key
                         )
                           ? 'text-right'
                           : col.key === 'gst'
                           ? 'text-center'
-                          : ''
-                      } ${
-                        ['pricingToStockist', 'pricingToRetailer'].includes(col.key)
-                          ? 'text-indigo-700 bg-indigo-50/40'
                           : ''
                       }`}
                     >

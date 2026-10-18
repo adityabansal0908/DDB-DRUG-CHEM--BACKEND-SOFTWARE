@@ -613,48 +613,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeStorageSet('ddb_saas_organizations_v1', JSON.stringify(organizations));
   }, [organizations]);
 
-  // Products (All partitions)
+  // Products (All partitions) - Purged for user request
   const [allProducts, setAllProducts] = useState<Product[]>(() => {
+    const isPurged = safeStorageGet('ddb_products_catalogue_purged_clean_v4') === 'true';
+    if (!isPurged) {
+      safeStorageSet('ddb_products_catalogue_purged_clean_v4', 'true');
+      safeStorageSet('ddb_products', JSON.stringify([]));
+      try {
+        localStorage.removeItem('ddb_products');
+      } catch (e) {}
+      return [];
+    }
+
     const saved = safeStorageGet('ddb_products');
-    const isZeroStockApplied = safeStorageGet('ddb_zero_stock_blank_pricing_v2') === 'true';
     let baseList: Product[] = [];
 
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          if (!isZeroStockApplied) {
-            const updated = parsed.map(p => ({
-              ...p,
-              tenantId: p.tenantId || 'tenant-ddb-01',
-              stockUnits: 0,
-              pricingToStockist: undefined,
-              pricingToRetailer: undefined,
-              sellingRate: undefined,
-              status: 'out_of_stock' as const,
-              batches: p.batches ? p.batches.map(b => ({ ...b, stock: 0 })) : []
-            }));
-            safeStorageSet('ddb_products', JSON.stringify(updated));
-            safeStorageSet('ddb_zero_stock_blank_pricing_v2', 'true');
-            baseList = updated;
-          } else {
-            baseList = parsed.map(p => ({ ...p, tenantId: p.tenantId || 'tenant-ddb-01' }));
-          }
+          baseList = parsed.map(p => ({ ...p, tenantId: p.tenantId || 'tenant-ddb-01' }));
         }
       } catch (e) {
-        baseList = INITIAL_PRODUCTS.map(p => ({ ...p, tenantId: 'tenant-ddb-01' }));
+        baseList = [];
       }
-    } else {
-      safeStorageSet('ddb_zero_stock_blank_pricing_v2', 'true');
-      baseList = INITIAL_PRODUCTS.map(p => ({ ...p, tenantId: 'tenant-ddb-01' }));
-    }
-
-    // Seed isolated demo tenant products if missing
-    if (!baseList.some(p => p.tenantId === 'tenant-apex-02')) {
-      baseList = [...baseList, ...APEX_ISOLATED_DATA.products];
-    }
-    if (!baseList.some(p => p.tenantId === 'tenant-zenith-03')) {
-      baseList = [...baseList, ...ZENITH_ISOLATED_DATA.products];
     }
     return baseList;
   });
@@ -1783,29 +1765,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // 3. Cloud Firestore Real-Time Listeners: synchronize live updates across devices
   useEffect(() => {
     const unsubProducts = subscribeToCollection<Product>('products', (items) => {
-      if (items && items.length > 0) {
-        const isSynced = localStorage.getItem('ddb_firestore_zero_stock_synced_v2') === 'true';
-        if (!isSynced) {
-          const hasStaleValues = items.some(
-            p => (p.stockUnits ?? 0) > 0 || p.pricingToStockist !== undefined || p.pricingToRetailer !== undefined || p.sellingRate !== undefined
-          );
-          if (hasStaleValues) {
-            const sanitized = items.map(p => ({
-              ...p,
-              stockUnits: 0,
-              pricingToStockist: undefined,
-              pricingToRetailer: undefined,
-              sellingRate: undefined,
-              status: 'out_of_stock' as const,
-              batches: p.batches ? p.batches.map(b => ({ ...b, stock: 0 })) : []
-            }));
-            setProducts(sanitized);
-            batchSaveDocuments('products', sanitized).catch(() => {});
-            localStorage.setItem('ddb_firestore_zero_stock_synced_v2', 'true');
-            return;
-          }
-          localStorage.setItem('ddb_firestore_zero_stock_synced_v2', 'true');
-        }
+      const isFirestorePurged = localStorage.getItem('ddb_firestore_products_purged_v7') === 'true';
+      if (!isFirestorePurged && items && items.length > 0) {
+        localStorage.setItem('ddb_firestore_products_purged_v7', 'true');
+        batchDeleteDocuments('products', items.map(p => p.id)).catch(() => {});
+        setProducts([]);
+        safeStorageSet('ddb_products', JSON.stringify([]));
+        return;
+      }
+      if (items) {
         setProducts(items);
       }
     });

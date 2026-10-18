@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { toast } from 'sonner';
 import { useApp } from '../../context/AppContext';
 import { parseExcelFile, downloadExcelTemplate, ParsedProductRow, formatGst } from '../../utils/excelHelper';
 import {
@@ -117,6 +118,9 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ isOpen, onCl
     });
 
     addMultipleProducts(productsToSave, importMode);
+    toast.success(`Imported ${productsToSave.length} formulations successfully`, {
+      description: `All ${productsToSave.length} rows imported 1:1 without merging identical names.`
+    });
     handleReset();
     onClose();
   };
@@ -314,10 +318,13 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ isOpen, onCl
         {parsedData.length > 0 && (
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <CheckCircle size={18} weight="fill" className="text-emerald-600" />
                 <span className="text-sm font-bold text-slate-900">
                   {parsedData.length} Formulations detected
+                </span>
+                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-2 py-0.5 rounded-md">
+                  1:1 Import (No Merging / No Dropping)
                 </span>
               </div>
 

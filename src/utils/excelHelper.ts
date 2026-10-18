@@ -63,7 +63,7 @@ export const parseExcelFile = async (file: File): Promise<ExcelImportResult> => 
         }
 
         const errors: string[] = [];
-        const productMap = new Map<string, ParsedProductRow>();
+        const productsList: ParsedProductRow[] = [];
 
         rawJson.forEach((row, index) => {
           const rowNum = index + 2; // header is row 1
@@ -103,9 +103,26 @@ export const parseExcelFile = async (file: File): Promise<ExcelImportResult> => 
               rawStr.toLowerCase() === 'none' ||
               rawStr.toLowerCase() === 'nil';
 
-            if (normalized.includes('product') || normalized.includes('brand') || normalized === 'name' || normalized === 'item') {
+            if (
+              normalized.includes('product') ||
+              normalized.includes('brand') ||
+              normalized === 'name' ||
+              normalized === 'item' ||
+              normalized.includes('medicine') ||
+              normalized.includes('formulation') ||
+              normalized.includes('drug') ||
+              normalized.includes('particular') ||
+              normalized.includes('title') ||
+              normalized.includes('desc')
+            ) {
               productName = String(val).trim();
-            } else if (normalized.includes('salt') || normalized.includes('composition') || normalized.includes('generic')) {
+            } else if (
+              normalized.includes('salt') ||
+              normalized.includes('composition') ||
+              normalized.includes('generic') ||
+              normalized.includes('molecule') ||
+              normalized.includes('activeingredient')
+            ) {
               saltName = String(val).trim();
             } else if (normalized.includes('pack') || normalized.includes('packaging')) {
               packaging = String(val).trim();
@@ -220,9 +237,18 @@ export const parseExcelFile = async (file: File): Promise<ExcelImportResult> => 
             }
           });
 
-          // Validation
+          // Validation: If product name is empty but salt/generic name exists, use salt name so the row is preserved
+          if (!productName && saltName) {
+            productName = saltName;
+          }
+
           if (!productName) {
-            errors.push(`Row ${rowNum}: Skipped because Product Name is missing.`);
+            const hasAnyData = Object.values(row).some((v) => String(v !== undefined && v !== null ? v : '').trim().length > 0);
+            if (!hasAnyData) {
+              // Completely blank spreadsheet row, skip silently
+              return;
+            }
+            errors.push(`Row ${rowNum}: Skipped because Product/Item Name is missing.`);
             return;
           }
 
@@ -260,53 +286,32 @@ export const parseExcelFile = async (file: File): Promise<ExcelImportResult> => 
             });
           }
 
-          // Multi-row merge for same product name
-          const key = productName.toLowerCase().trim();
-          if (productMap.has(key)) {
-            const existing = productMap.get(key)!;
-            // Add new batches
-            existing.batches.push(...parsedBatches);
-            // Append batch string
-            existing.batchNo = `${existing.batchNo}, ${batchNo}`;
-            existing.stockUnits += stock;
-            // Only update fields if explicitly provided in this row
-            if (mrp > 0) existing.mrp = mrp;
-            if (pricingToStockist !== undefined) existing.pricingToStockist = pricingToStockist;
-            if (pricingToRetailer !== undefined) existing.pricingToRetailer = pricingToRetailer;
-            if (sellingPrice !== undefined) existing.sellingRate = sellingPrice;
-            if (purchasePrice !== undefined) existing.purchasePrice = purchasePrice;
-            if (company) existing.company = company;
-            if (finalCategory) existing.category = finalCategory;
-            if (finalClinicalSpeciality) existing.clinicalSpeciality = finalClinicalSpeciality;
-            if (reorderLevel !== undefined) existing.reorderLevel = reorderLevel;
-            if (isHighDemand !== undefined) existing.isHighDemand = isHighDemand;
-          } else {
-            productMap.set(key, {
-              name: productName,
-              genericName: saltName,
-              packaging: packaging,
-              form: dosageForm,
-              mrp: mrp,
-              pricingToStockist: pricingToStockist,
-              pricingToRetailer: pricingToRetailer,
-              sellingRate: sellingPrice,
-              purchasePrice: purchasePrice,
-              gst: gst,
-              company: company || 'DDB DRUG CHEM',
-              stockUnits: stock,
-              batchNo: batchNo,
-              expiryDate: expiry,
-              batches: parsedBatches,
-              category: finalCategory,
-              clinicalSpeciality: finalClinicalSpeciality,
-              reorderLevel: reorderLevel,
-              isHighDemand: isHighDemand
-            });
-          }
+          // 1:1 Spreadsheet Row Import: Every row is imported as its own distinct product (no filtering, discarding, or merging)
+          productsList.push({
+            name: productName,
+            genericName: saltName,
+            packaging: packaging,
+            form: dosageForm,
+            mrp: mrp,
+            pricingToStockist: pricingToStockist,
+            pricingToRetailer: pricingToRetailer,
+            sellingRate: sellingPrice,
+            purchasePrice: purchasePrice,
+            gst: gst,
+            company: company || 'DDB DRUG CHEM',
+            stockUnits: stock,
+            batchNo: batchNo,
+            expiryDate: expiry,
+            batches: parsedBatches,
+            category: finalCategory,
+            clinicalSpeciality: finalClinicalSpeciality,
+            reorderLevel: reorderLevel,
+            isHighDemand: isHighDemand
+          });
         });
 
         resolve({
-          products: Array.from(productMap.values()),
+          products: productsList,
           errors: errors,
           totalRowsProcessed: rawJson.length
         });

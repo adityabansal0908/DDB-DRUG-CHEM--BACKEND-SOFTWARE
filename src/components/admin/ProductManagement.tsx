@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { useApp } from '../../context/AppContext';
 import { Product } from '../../types';
@@ -19,6 +19,7 @@ import { InventoryChangeLog } from './InventoryChangeLog';
 import { evaluateProductExpiry, ExpiryUrgency } from '../../utils/expiryHelper';
 import { downloadExcelTemplate, exportProductsToExcel } from '../../utils/excelHelper';
 import { formatGst } from '../../utils/gstHelper';
+import { matchesProductSearch } from '../../utils/productSearchHelper';
 import {
   Plus,
   MagnifyingGlass,
@@ -94,6 +95,8 @@ export const ProductManagement: React.FC = () => {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportModalScope, setExportModalScope] = useState<ExportScope>('all');
   const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
+  // Table container ref for scrolling
+  const tableScrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Product Expiry Tracker & Batch Management State
   const [selectedBatchProduct, setSelectedBatchProduct] = useState<Product | null>(null);
@@ -418,15 +421,7 @@ export const ProductManagement: React.FC = () => {
           ? !pSpec
           : (pSpec.toLowerCase() === selectedClinicalSpeciality.toLowerCase().trim()));
 
-      const term = searchTerm.trim().toLowerCase();
-      const matchesSearch =
-        term === '' ||
-        (p.name && p.name.toLowerCase().includes(term)) ||
-        (p.genericName && p.genericName.toLowerCase().includes(term)) ||
-        (p.company && p.company.toLowerCase().includes(term)) ||
-        (p.packaging && p.packaging.toLowerCase().includes(term)) ||
-        (p.category && p.category.toLowerCase().includes(term)) ||
-        (p.clinicalSpeciality && p.clinicalSpeciality.toLowerCase().includes(term));
+      const matchesSearch = matchesProductSearch(p, searchTerm);
       return matchesCat && matchesSpec && matchesSearch;
     });
 
@@ -1446,7 +1441,7 @@ export const ProductManagement: React.FC = () => {
               data-testid="product-search-input"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search name, salt, company, category..."
+              placeholder="Search name, salt, dosage form (e.g. tablet, syrup), category..."
               className="w-full pl-10 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium transition-all"
             />
             {searchTerm && (
@@ -1830,17 +1825,22 @@ export const ProductManagement: React.FC = () => {
         </div>
       ) : (
         /* The 12-Column Product Catalogue Table */
-        <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
+          <div
+            ref={tableScrollContainerRef}
+            id="products-table-scroll-container"
+            data-testid="products-table-scroll-container"
+            className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-14rem)] min-h-[460px] scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100 relative"
+          >
             <table
               id="products-table"
               data-testid="products-table"
               className="w-full text-left text-xs sm:text-sm border-collapse"
             >
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/90 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-600">
+              <thead className="sticky top-0 z-20 shadow-2xs">
+                <tr className="border-b-2 border-slate-300 bg-slate-100 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-700">
                   {/* Bulk Select Checkbox */}
-                  <th className="py-3.5 px-3.5 w-10 text-center select-none">
+                  <th className="sticky top-0 z-20 bg-slate-100 py-3.5 px-3.5 w-10 text-center select-none border-b-2 border-slate-300">
                     <div className="flex items-center justify-center">
                       <input
                         type="checkbox"
@@ -1859,7 +1859,7 @@ export const ProductManagement: React.FC = () => {
                     </div>
                   </th>
                   {/* Column 1 */}
-                  <th className="py-3.5 px-4 whitespace-nowrap">
+                  <th className="sticky top-0 z-20 bg-slate-100 py-3.5 px-4 whitespace-nowrap border-b-2 border-slate-300">
                     <div className="flex items-center gap-1.5">
                       <span>1. Product Name</span>
                       <span className="inline-flex items-center gap-0.5 text-[9px] font-bold tracking-wider text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">
@@ -1869,47 +1869,47 @@ export const ProductManagement: React.FC = () => {
                     </div>
                   </th>
                   {/* Column 2 */}
-                  <th className="py-3.5 px-4 min-w-[200px]">2. Salt / Composition</th>
+                  <th className="sticky top-0 z-20 bg-slate-100 py-3.5 px-4 min-w-[200px] border-b-2 border-slate-300">2. Salt / Composition</th>
                   {/* Column 3 */}
-                  <th className="py-3.5 px-3 whitespace-nowrap">3. Packaging</th>
+                  <th className="sticky top-0 z-20 bg-slate-100 py-3.5 px-3 whitespace-nowrap border-b-2 border-slate-300">3. Packaging</th>
                   {/* Column 4 */}
-                  <th className="py-3.5 px-3 whitespace-nowrap">4. Dosage Form</th>
+                  <th className="sticky top-0 z-20 bg-slate-100 py-3.5 px-3 whitespace-nowrap border-b-2 border-slate-300">4. Dosage Form</th>
                   {/* Column 5 */}
-                  <th className="py-3.5 px-3 text-right whitespace-nowrap">5. MRP</th>
+                  <th className="sticky top-0 z-20 bg-slate-100 py-3.5 px-3 text-right whitespace-nowrap border-b-2 border-slate-300">5. MRP</th>
                   {/* Column 6: Pricing to Stockist (PTS) */}
-                  <th className="py-3.5 px-3 text-right whitespace-nowrap text-emerald-800 bg-emerald-50/50 font-bold">
+                  <th className="sticky top-0 z-20 bg-emerald-100 text-emerald-950 py-3.5 px-3 text-right whitespace-nowrap font-bold border-b-2 border-emerald-300">
                     6. Pricing to Stockist
                   </th>
                   {/* Column 7: Pricing to Retailer (PTR) */}
-                  <th className="py-3.5 px-3 text-right whitespace-nowrap text-teal-800 bg-teal-50/50 font-bold">
+                  <th className="sticky top-0 z-20 bg-teal-100 text-teal-950 py-3.5 px-3 text-right whitespace-nowrap font-bold border-b-2 border-teal-300">
                     7. Pricing to Retailer
                   </th>
                   {/* Column 8 */}
-                  <th className="py-3.5 px-3 text-right whitespace-nowrap text-blue-700">8. Selling Price</th>
+                  <th className="sticky top-0 z-20 bg-slate-100 py-3.5 px-3 text-right whitespace-nowrap text-blue-800 border-b-2 border-slate-300">8. Selling Price</th>
                   {/* Column 9 */}
-                  <th className="py-3.5 px-3 text-right whitespace-nowrap">9. Purchase Price</th>
+                  <th className="sticky top-0 z-20 bg-slate-100 py-3.5 px-3 text-right whitespace-nowrap border-b-2 border-slate-300">9. Purchase Price</th>
                   {/* Column 10 */}
-                  <th className="py-3.5 px-3 text-center whitespace-nowrap">10. GST</th>
+                  <th className="sticky top-0 z-20 bg-slate-100 py-3.5 px-3 text-center whitespace-nowrap border-b-2 border-slate-300">10. GST</th>
                   {/* Column 11 */}
-                  <th className="py-3.5 px-3 whitespace-nowrap">11. Company</th>
+                  <th className="sticky top-0 z-20 bg-slate-100 py-3.5 px-3 whitespace-nowrap border-b-2 border-slate-300">11. Company</th>
                   {/* Column 12 */}
-                  <th className="py-3.5 px-3 whitespace-nowrap text-blue-900 bg-blue-50/60 font-extrabold">12. Category</th>
+                  <th className="sticky top-0 z-20 bg-blue-100 text-blue-950 py-3.5 px-3 whitespace-nowrap font-extrabold border-b-2 border-blue-300">12. Category</th>
                   {/* Column 13: Clinical Speciality */}
-                  <th className="py-3.5 px-3 whitespace-nowrap text-purple-900 bg-purple-50/60 font-extrabold">
+                  <th className="sticky top-0 z-20 bg-purple-100 text-purple-950 py-3.5 px-3 whitespace-nowrap font-extrabold border-b-2 border-purple-300">
                     <div className="flex items-center gap-1">
                       <Stethoscope size={13} weight="bold" />
                       <span>13. Speciality</span>
                     </div>
                   </th>
                   {/* Column 14: Stock Level & Warning System */}
-                  <th className="py-3.5 px-3 whitespace-nowrap text-amber-900 bg-amber-50/60 font-extrabold">
+                  <th className="sticky top-0 z-20 bg-amber-100 text-amber-950 py-3.5 px-3 whitespace-nowrap font-extrabold border-b-2 border-amber-300">
                     <div className="flex items-center gap-1">
                       <span>14. Stock Level</span>
                       <span className="text-[10px] text-amber-700 font-semibold lowercase">(&lt;{lowStockThreshold})</span>
                     </div>
                   </th>
                   {/* Actions */}
-                  <th className="py-3.5 px-4 text-right whitespace-nowrap">Actions</th>
+                  <th className="sticky top-0 z-20 bg-slate-100 py-3.5 px-4 text-right whitespace-nowrap border-b-2 border-slate-300">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-sans text-xs">

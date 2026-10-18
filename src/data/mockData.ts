@@ -31,7 +31,7 @@ export const INITIAL_COMPANY_PROFILE: CompanyProfile = {
   updatedAt: new Date().toISOString()
 };
 
-export const INITIAL_PRODUCTS: Product[] = [
+export const SAMPLE_PRODUCTS: Product[] = [
   {
     id: 'prod-1',
     name: 'TelmiKard 40-H',
@@ -370,6 +370,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     hiddenFromRep: false
   }
 ];
+
+export const INITIAL_PRODUCTS: Product[] = [];
 
 
 export const INITIAL_DOCTORS: Doctor[] = [
